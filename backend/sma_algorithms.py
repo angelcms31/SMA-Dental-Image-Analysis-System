@@ -49,6 +49,29 @@ def compute_histogram_prob(gray_image: np.ndarray) -> np.ndarray:
     return hist / total
 
 
+def autocrop_black_borders(gray_image: np.ndarray, black_thresh: int = 8) -> np.ndarray:
+    """
+    Crops away solid/near-black letterboxing borders (common in exported
+    OPG images that pad the film to a fixed canvas size) before the image
+    is used for anything -- histogram, SMA/ESMA optimization, or the
+    overlay. Left uncropped, a large black border dominates the pixel
+    count near intensity 0 and skews Kapur's entropy toward separating
+    "black border vs. content" rather than actual anatomical structures.
+    Falls back to the original image untouched if no clear border is found.
+    """
+    mask = gray_image > black_thresh
+    rows = np.where(mask.any(axis=1))[0]
+    cols = np.where(mask.any(axis=0))[0]
+    if len(rows) == 0 or len(cols) == 0:
+        return gray_image
+    y0, y1 = int(rows.min()), int(rows.max()) + 1
+    x0, x1 = int(cols.min()), int(cols.max()) + 1
+    # sanity check -- don't crop away almost everything on a weird image
+    if (y1 - y0) < gray_image.shape[0] * 0.2 or (x1 - x0) < gray_image.shape[1] * 0.2:
+        return gray_image
+    return gray_image[y0:y1, x0:x1]
+
+
 def kapurs_entropy_fitness(thresholds, prob: np.ndarray) -> float:
     """
     Kapur's entropy for a candidate threshold vector.

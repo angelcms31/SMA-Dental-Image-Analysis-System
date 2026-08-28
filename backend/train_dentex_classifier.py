@@ -3,8 +3,9 @@ train_dentex_classifier.py
 ---------------------------
 Full pipeline: DENTEX JSON + images -> per-tooth crop -> SMA/ESMA
 segmentation (feature extraction) -> Random Forest classifier ->
-accuracy report, comparing Standard SMA-derived features against
-Enhanced SMA (ESMA)-derived features.
+cross-validated accuracy report, comparing Standard SMA-derived
+features against Enhanced SMA (ESMA)-derived features. Saves the
+final trained model for each algorithm to disk.
 
 This directly tests the thesis's core hypothesis on a DOWNSTREAM task:
 if ESMA produces better segmentation than Standard SMA, a classifier
@@ -19,14 +20,21 @@ thesis. The classifier is a separate, standard supervised-learning
 step trained on those segmentation-derived numbers against DENTEX's
 dentist-verified labels.
 
+WHY CROSS-VALIDATION: a single train/test split on a small dataset
+(e.g. 100 crops -> only ~25 in the test set, split across 4 unequal
+classes) is noisy -- one lucky/unlucky prediction swings the F1-score
+a lot. 5-fold stratified cross-validation evaluates on every sample
+exactly once (each fold takes a turn as the held-out set) and reports
+mean +/- std, which is what you want to defend in Chapter 4.
+
 Usage:
     python train_dentex_classifier.py \
         --json train_quadrant_enumeration_disease.json \
-        --images_dir ./train_images \
+        --images_dir ./xrays \
         --sma_iterations 40 --sma_population 20
 
-Requires: opencv-python-headless, numpy, scikit-learn, scikit-image
-(same stack as the rest of the thesis system -- see requirements.txt)
+Requires: opencv-python-headless, numpy, scikit-learn, scikit-image,
+joblib (same stack as the rest of the thesis system -- see requirements.txt)
 """
 
 import argparse
@@ -35,17 +43,13 @@ import os
 import time
 
 import cv2
+import joblib
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, f1_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, f1_score, accuracy_score
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
-from sma_algorithms import (
-    apply_thresholds,
-    compute_histogram_prob,
-    enhanced_sma,
-    standard_sma,
-)
+from sma_algorithms import compute_histogram_prob, enhanced_sma, standard_sma
 
 
 def load_dentex(json_path, images_dir):
@@ -56,13 +60,26 @@ def load_dentex(json_path, images_dir):
     id_to_label = {c["id"]: c["name"] for c in data["categories_3"]}
     id_to_file = {img["id"]: img["file_name"] for img in data["images"]}
 
+    n_skipped = 0
     for ann in data["annotations"]:
         filename = id_to_file.get(ann["image_id"])
         if filename is None:
+            n_skipped += 1
             continue
         img_path = os.path.join(images_dir, filename)
-        image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+
+        try:
+            image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        except cv2.error as e:
+            # a single corrupted/truncated file shouldn't kill the whole
+            # run -- skip it and keep going, but tell the user which file
+            print(f"  [skip] could not read '{filename}' ({e.__class__.__name__}: {e})")
+            n_skipped += 1
+            continue
+
         if image is None:
+            print(f"  [skip] '{filename}' decoded to None (missing, unreadable, or not an image)")
+            n_skipped += 1
             continue
 
         h, w = image.shape
@@ -71,11 +88,15 @@ def load_dentex(json_path, images_dir):
         x0, y0 = max(0, int(x - pad)), max(0, int(y - pad))
         x1, y1 = min(w, int(x + bw + pad)), min(h, int(y + bh + pad))
         if x1 - x0 < 10 or y1 - y0 < 10:
+            n_skipped += 1
             continue
 
         crop = image[y0:y1, x0:x1]
         label = id_to_label[ann["category_id_3"]]
         yield crop, label
+
+    if n_skipped:
+        print(f"  ({n_skipped} annotations skipped due to missing/corrupted/too-small images)")
 
 
 def extract_features(crop, algo_fn, N, T, seed=0):
@@ -127,7 +148,7 @@ FEATURE_NAMES = [
 ]
 
 
-def run_pipeline(json_path, images_dir, N, T, test_size, max_samples, seed):
+def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_dir):
     print("Loading DENTEX crops...")
     crops, labels = [], []
     for crop, label in load_dentex(json_path, images_dir):
@@ -135,39 +156,113 @@ def run_pipeline(json_path, images_dir, N, T, test_size, max_samples, seed):
         labels.append(label)
         if max_samples and len(crops) >= max_samples:
             break
+    labels = np.array(labels)
     print(f"Loaded {len(crops)} annotated tooth crops.")
-    if len(crops) < 20:
-        print("WARNING: very few samples -- results will not be meaningful. "
+    if len(crops) < 50:
+        print("WARNING: very few samples -- results will not be reliable. "
               "Point --json/--images_dir at the full training set (705 images), "
               "not the 50-image validation set.")
+
+    os.makedirs(out_dir, exist_ok=True)
+    summary = {}
 
     for algo_name, algo_fn in [("standard", standard_sma), ("enhanced", enhanced_sma)]:
         print(f"\nExtracting features using {algo_name} SMA "
               f"({len(crops)} crops, N={N}, T={T})...")
         t0 = time.perf_counter()
-        X = np.array([extract_features(c, algo_fn, N, T, seed=seed) for c in crops])
-        print(f"  done in {time.perf_counter() - t0:.1f}s")
+        feature_rows = []
+        good_labels = []
+        n_failed = 0
+        for i, (crop, lbl) in enumerate(zip(crops, labels)):
+            if i > 0 and i % 25 == 0:
+                elapsed = time.perf_counter() - t0
+                print(f"  ...{i}/{len(crops)} crops done ({elapsed:.1f}s elapsed)", flush=True)
+            try:
+                feature_rows.append(extract_features(crop, algo_fn, N, T, seed=seed))
+                good_labels.append(lbl)
+            except Exception as e:
+                n_failed += 1
+                print(f"  [skip] feature extraction failed on crop {i} "
+                      f"({e.__class__.__name__}: {e})", flush=True)
+        X = np.array(feature_rows)
+        labels_for_algo = np.array(good_labels)
+        print(f"  done in {time.perf_counter() - t0:.1f}s "
+              f"({len(X)} usable, {n_failed} failed)", flush=True)
+        if len(X) < 20:
+            print("  Too few usable samples for this algorithm -- skipping.")
+            continue
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, labels, test_size=test_size, random_state=seed, stratify=labels
-        )
+        # class counts must support the requested number of folds
+        min_class_count = min(np.unique(labels_for_algo, return_counts=True)[1])
+        folds = min(n_folds, min_class_count)
+        if folds < n_folds:
+            print(f"  NOTE: smallest class has only {min_class_count} samples -- "
+                  f"reducing folds from {n_folds} to {folds} so every fold has "
+                  f"at least one sample of every class.")
+        if folds < 2:
+            print("  Not enough samples of the rarest class to cross-validate "
+                  "(need at least 2). Skipping CV for this algorithm -- get "
+                  "more samples of the rare class(es) before reporting results.")
+            continue
 
+        skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
         clf = RandomForestClassifier(n_estimators=200, random_state=seed, class_weight="balanced")
-        clf.fit(X_train, y_train)
-        y_pred = clf.predict(X_test)
 
-        acc = accuracy_score(y_test, y_pred)
-        f1_macro = f1_score(y_test, y_pred, average="macro")
+        y_pred = cross_val_predict(clf, X, labels_for_algo, cv=skf)
+        acc = accuracy_score(labels_for_algo, y_pred)
+        f1_macro = f1_score(labels_for_algo, y_pred, average="macro", zero_division=0)
 
-        print(f"\n=== {algo_name.upper()} SMA -- classifier results ===")
-        print(f"Accuracy: {acc:.4f}")
+        # per-fold accuracy, for the mean +/- std you'll want to report
+        fold_accs = []
+        for train_idx, test_idx in skf.split(X, labels_for_algo):
+            fold_clf = RandomForestClassifier(n_estimators=200, random_state=seed, class_weight="balanced")
+            fold_clf.fit(X[train_idx], labels_for_algo[train_idx])
+            fold_accs.append(fold_clf.score(X[test_idx], labels_for_algo[test_idx]))
+        fold_accs = np.array(fold_accs)
+
+        print(f"\n=== {algo_name.upper()} SMA -- {folds}-fold cross-validated results ===")
+        print(f"Accuracy (pooled across folds): {acc:.4f}")
+        print(f"Accuracy per fold: {fold_accs.mean():.4f} +/- {fold_accs.std():.4f}")
         print(f"Macro F1: {f1_macro:.4f}")
-        print(classification_report(y_test, y_pred, zero_division=0))
+        print(classification_report(labels_for_algo, y_pred, zero_division=0))
 
-        importances = sorted(zip(FEATURE_NAMES, clf.feature_importances_), key=lambda x: -x[1])
+        # fit the FINAL model on all available data and save it
+        final_clf = RandomForestClassifier(n_estimators=200, random_state=seed, class_weight="balanced")
+        final_clf.fit(X, labels_for_algo)
+
+        importances = sorted(zip(FEATURE_NAMES, final_clf.feature_importances_), key=lambda x: -x[1])
         print("Top features:")
         for name, imp in importances[:5]:
             print(f"  {name}: {imp:.3f}")
+
+        model_path = os.path.join(out_dir, f"rf_{algo_name}_sma.joblib")
+        joblib.dump({
+            "model": final_clf,
+            "feature_names": FEATURE_NAMES,
+            "classes": list(final_clf.classes_),
+            "sma_params": {"N": N, "T": T, "d": 2},
+            "algo": algo_name,
+        }, model_path)
+        print(f"Saved trained model -> {model_path}")
+
+        summary[algo_name] = {
+            "accuracy_mean": float(fold_accs.mean()),
+            "accuracy_std": float(fold_accs.std()),
+            "macro_f1": float(f1_macro),
+            "n_folds": folds,
+            "n_samples": len(crops),
+        }
+
+    summary_path = os.path.join(out_dir, "comparison_summary.json")
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    print(f"\nSaved comparison summary -> {summary_path}")
+    if "standard" in summary and "enhanced" in summary:
+        print("\n=== STANDARD vs ENHANCED (for Chapter 4) ===")
+        print(f"Standard SMA -- accuracy: {summary['standard']['accuracy_mean']:.4f} "
+              f"+/- {summary['standard']['accuracy_std']:.4f}, macro F1: {summary['standard']['macro_f1']:.4f}")
+        print(f"Enhanced SMA -- accuracy: {summary['enhanced']['accuracy_mean']:.4f} "
+              f"+/- {summary['enhanced']['accuracy_std']:.4f}, macro F1: {summary['enhanced']['macro_f1']:.4f}")
 
 
 if __name__ == "__main__":
@@ -176,9 +271,10 @@ if __name__ == "__main__":
     parser.add_argument("--images_dir", required=True)
     parser.add_argument("--sma_population", type=int, default=20, dest="N")
     parser.add_argument("--sma_iterations", type=int, default=30, dest="T")
-    parser.add_argument("--test_size", type=float, default=0.25)
+    parser.add_argument("--folds", type=int, default=5, help="Number of stratified CV folds")
     parser.add_argument("--max_samples", type=int, default=None,
                          help="Cap total crops for a quick test run")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--out_dir", default="./models", help="Where to save trained models + summary")
     args = parser.parse_args()
-    run_pipeline(args.json, args.images_dir, args.N, args.T, args.test_size, args.max_samples, args.seed)
+    run_pipeline(args.json, args.images_dir, args.N, args.T, args.folds, args.max_samples, args.seed, args.out_dir)

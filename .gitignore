@@ -1,0 +1,17 @@
+datasets/*
+datasets/**/*
+
+!datasets/**/.gitkeep
+!datasets/.gitkeep
+
+*.jpg
+*.jpeg
+*.png
+*.json
+*.csv
+*.npy
+*.zip
+*.tar.gz
+
+esma_tuning_results.json
+full_image_comparison.json
