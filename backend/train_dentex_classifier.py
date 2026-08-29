@@ -99,7 +99,7 @@ def load_dentex(json_path, images_dir):
         print(f"  ({n_skipped} annotations skipped due to missing/corrupted/too-small images)")
 
 
-def extract_features(crop, algo_fn, N, T, seed=0):
+def extract_features(crop, algo_fn, N, T, seed=0, algo_kwargs=None):
     """
     Runs one SMA variant on this crop and turns its segmentation result
     into a fixed-length numeric feature vector for the classifier.
@@ -107,7 +107,7 @@ def extract_features(crop, algo_fn, N, T, seed=0):
     prob = compute_histogram_prob(crop)
     d = 2  # 2 thresholds -> 3 bands (dark / mid / bright) -- small crop,
            # keep the search space modest so this runs fast per-tooth
-    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed)
+    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, **(algo_kwargs or {}))
     thresholds = result["thresholds"]
     entropy = result["fitness"]
 
@@ -148,7 +148,7 @@ FEATURE_NAMES = [
 ]
 
 
-def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_dir):
+def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_dir, use_adaptive_k=False):
     print("Loading DENTEX crops...")
     crops, labels = [], []
     for crop, label in load_dentex(json_path, images_dir):
@@ -166,9 +166,15 @@ def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_di
     os.makedirs(out_dir, exist_ok=True)
     summary = {}
 
-    for algo_name, algo_fn in [("standard", standard_sma), ("enhanced", enhanced_sma)]:
+    algo_specs = [
+        ("standard", standard_sma, {}),
+        ("enhanced", enhanced_sma, {"adaptive_k": True} if use_adaptive_k else {}),
+    ]
+
+    for algo_name, algo_fn, algo_kwargs in algo_specs:
         print(f"\nExtracting features using {algo_name} SMA "
-              f"({len(crops)} crops, N={N}, T={T})...")
+              f"({len(crops)} crops, N={N}, T={T}"
+              f"{', adaptive_k=True' if algo_kwargs.get('adaptive_k') else ''})...")
         t0 = time.perf_counter()
         feature_rows = []
         good_labels = []
@@ -178,7 +184,7 @@ def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_di
                 elapsed = time.perf_counter() - t0
                 print(f"  ...{i}/{len(crops)} crops done ({elapsed:.1f}s elapsed)", flush=True)
             try:
-                feature_rows.append(extract_features(crop, algo_fn, N, T, seed=seed))
+                feature_rows.append(extract_features(crop, algo_fn, N, T, seed=seed, algo_kwargs=algo_kwargs))
                 good_labels.append(lbl)
             except Exception as e:
                 n_failed += 1
@@ -276,5 +282,8 @@ if __name__ == "__main__":
                          help="Cap total crops for a quick test run")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out_dir", default="./models", help="Where to save trained models + summary")
+    parser.add_argument("--adaptive_k", action="store_true",
+                         help="Use diversity-driven adaptive leader count for ESMA (extension beyond literal Algorithm 3.1)")
     args = parser.parse_args()
-    run_pipeline(args.json, args.images_dir, args.N, args.T, args.folds, args.max_samples, args.seed, args.out_dir)
+    run_pipeline(args.json, args.images_dir, args.N, args.T, args.folds, args.max_samples, args.seed,
+                 args.out_dir, use_adaptive_k=args.adaptive_k)

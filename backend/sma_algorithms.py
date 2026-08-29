@@ -137,36 +137,45 @@ def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None):
         curr_bF = float(fitness[order[0]])
         curr_wF = float(fitness[order[-1]])
 
-        # weight W_i (top half vs bottom half of ranked population)
-        W = np.zeros(N)
+        # weight W_i (top half vs bottom half of ranked population) --
+        # vectorized: same formula as before, no Python-level agent loop
         half = N // 2
-        for rank, idx in enumerate(order):
-            r = rng.random()
-            ratio = (curr_bF - fitness[idx]) / (curr_bF - curr_wF + 1e-12) + 1
-            if rank < half:
-                W[idx] = 1 + r * np.log(ratio)
-            else:
-                W[idx] = 1 - r * np.log(ratio)
+        r_w = rng.random(N)
+        ratio = (curr_bF - fitness[order]) / (curr_bF - curr_wF + 1e-12) + 1
+        sign = np.where(np.arange(N) < half, 1.0, -1.0)
+        W_ordered = 1 + sign * r_w * np.log(ratio)
+        W = np.empty(N)
+        W[order] = W_ordered
 
         # fixed switching parameter, iteration-based oscillation bound
         z = 0.03
         a = np.arctanh(np.clip(-t / T + 1, -0.999999, 0.999999))
         vc = 1 - t / T  # linear decay 1 -> 0
 
-        newX = X.copy()
-        for i in range(N):
-            if rng.random() < z:
-                # random re-exploration
-                newX[i] = rng.uniform(lb, ub, size=d)
-            else:
-                p = np.tanh(abs(fitness[i] - curr_bF))
-                vb = rng.uniform(-a, a, size=d)
-                ia, ib = rng.choice(N, 2, replace=False)
-                XA, XB = X[ia], X[ib]
-                if rng.random() < p:
-                    newX[i] = Xb + vb * (W[i] * XA - XB)
-                else:
-                    newX[i] = vc * X[i]
+        # vectorized branching (same three cases as before: random
+        # re-exploration / multi-agent exploitation / decay toward Xb)
+        rand_explore = rng.random(N) < z
+        p_vals = np.tanh(np.abs(fitness - curr_bF))
+        choose_exploit = rng.random(N) < p_vals
+
+        vb = rng.uniform(-a, a, size=(N, d))
+        ia = rng.integers(0, N, size=N)
+        ib = rng.integers(0, N, size=N)
+        clash = ia == ib
+        while np.any(clash):
+            ib[clash] = rng.integers(0, N, size=int(clash.sum()))
+            clash = ia == ib
+        XA = X[ia]
+        XB = X[ib]
+
+        exploit_pos = Xb[None, :] + vb * (W[:, None] * XA - XB)
+        decay_pos = vc * X
+        random_pos = rng.uniform(lb, ub, size=(N, d))
+
+        newX = np.where(
+            rand_explore[:, None], random_pos,
+            np.where(choose_exploit[:, None], exploit_pos, decay_pos)
+        )
 
         newX = np.clip(newX, lb, ub)
         newFitness = np.array([kapurs_entropy_fitness(newX[i], prob) for i in range(N)])
@@ -198,29 +207,61 @@ def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None):
 
 def enhanced_sma(
     prob, d, N=30, T=100, lb=0, ub=255, seed=None,
-    k=3,                 # number of leaders (Objective 1) -- NOT specified in draft, tune/report
-    alpha=0.10, beta=0.10, gamma=0.10, delta=0.10,   # adaptation step sizes -- NOT specified in draft
-    h=5,                  # CR sliding window -- NOT specified in draft
-    z_min=0.01, z_max=0.5,  # clamp bounds -- NOT specified in draft
-    cr_stall_eps=1e-6,    # "CR near zero" threshold
-    pd_low_thresh=0.10,   # "PD low" threshold
+    k=3,                 # number of leaders (Algorithm 3.1) / k_max if adaptive_k=True
+    alpha=0.10, beta=0.10, gamma=0.10, delta=0.10,   # adaptation step sizes
+    h=5,                  # CR sliding window
+    z_min=0.01, z_max=0.5,  # clamp bounds
+    cr_stall_eps=1e-6,    # tau_CR in the thesis
+    pd_low_thresh=0.10,   # tau_PD in the thesis
+    adaptive_k=False,     # extension beyond Algorithm 3.1 -- see docstring
 ):
     """
-    ESMA with all three proposed modifications:
-      Obj 1: fitness-weighted multi-leader guidance (replaces single Xb)
+    ESMA implementing all three proposed modifications, matching
+    Algorithm 3.1 in the thesis LITERALLY (as found in the full PDF,
+    which includes the pseudocode box that was missing from an earlier
+    draft):
+      Obj 1: fitness-weighted multi-leader guidance
       Obj 2: quasi-uniform (stratified) initialization
       Obj 3: performance-feedback adaptive control of z(t) and a(t)
-             driven by convergence rate CR(t) and population diversity PD(t)
+
+    IMPORTANT: Algorithm 3.1 as written has EVERY agent, EVERY
+    iteration, move via the multi-leader weighted formula (step 5.4)
+    UNCONDITIONALLY -- there is no z-triggered random-reinitialization
+    branch and no probability-gated choice between "exploit" and
+    "decay" (both of which standard SMA has, and which an earlier
+    version of this function incorrectly carried over into ESMA). This
+    version follows the pseudocode literally: no branching in the
+    position update. z(t) is still computed and updated per steps
+    5.5/5.6 (as the thesis specifies), but note it does not appear
+    inside the step 5.4 formula itself -- only a(t) does, via vb's
+    range. That asymmetry (z computed but not consumed by name) is in
+    the thesis's own pseudocode, not something introduced here; it may
+    be worth flagging to your adviser as a documentation point, but
+    this function implements exactly what Algorithm 3.1 specifies.
+
+    OPTIONAL EXTENSION -- Diversity-Driven Adaptive Leader Count:
+    when adaptive_k=True, k is no longer fixed; it decays from
+    k_max toward 1 as population diversity PD(t) collapses, using
+        k(t) = max(1, round(k_max * PD(t-1) / PD_max))
+    where PD_max is the diversity of the initial (quasi-uniform)
+    population and PD(t-1) is the diversity measured at the END of
+    the previous iteration (using the previous iteration's value,
+    not the current one, for the same causal reason z(t) and a(t)
+    are updated at the end of an iteration and consumed at the start
+    of the next). This is documented as an extension beyond the
+    literal Algorithm 3.1 -- it must be described in Chapter 3 if
+    used, since the pseudocode itself specifies a fixed k.
     """
     rng = np.random.default_rng(seed)
     t_start = time.perf_counter()
 
-    # --- Objective 2: quasi-uniform initialization ---
+    # --- Step 2: quasi-uniform initialization ---
     X = np.zeros((N, d))
     for i in range(N):
         for j in range(d):
             X[i, j] = lb + ((i / N) + rng.random() / N) * (ub - lb)
 
+    # --- Steps 3-4 ---
     fitness = np.array([kapurs_entropy_fitness(X[i], prob) for i in range(N)])
     best_idx = int(np.argmax(fitness))
     Xb = X[best_idx].copy()
@@ -228,60 +269,72 @@ def enhanced_sma(
 
     bF_history = [bF]
     convergence = [bF]
-
-    # search space diameter (for PD normalization)
     D = float(np.sqrt(d) * (ub - lb))
+    z = 0.03
+    a = 1.0
 
-    z = 0.03      # starting switching parameter (same start as standard SMA)
-    a = 1.0       # starting oscillation bound
+    k_max = k  # the k passed in is treated as the ceiling when adaptive_k is on
+    if adaptive_k and N > 1:
+        diffs0 = X[:, None, :] - X[None, :, :]
+        PD_max = float(np.sqrt((diffs0 ** 2).sum(axis=-1)).sum() / (N * (N - 1) * D))
+        PD_max = max(PD_max, 1e-9)
+    else:
+        PD_max = 1.0
+    PD_prev = PD_max  # iteration 1 sees the initial (maximally diverse) population
 
     for t in range(1, T + 1):
+        # --- adaptive leader count (extension) or fixed k (Algorithm 3.1) ---
+        if adaptive_k:
+            kk = max(1, min(N, int(round(k_max * PD_prev / PD_max))))
+        else:
+            kk = min(k, N)
+
+        # --- 5.1: rank population, select top-k leaders ---
         order = np.argsort(-fitness)
-        curr_bF = float(fitness[order[0]])
-        curr_wF = float(fitness[order[-1]])
-
-        # same W_i formula as standard SMA
-        W = np.zeros(N)
-        half = N // 2
-        for rank, idx in enumerate(order):
-            r = rng.random()
-            ratio = (curr_bF - fitness[idx]) / (curr_bF - curr_wF + 1e-12) + 1
-            if rank < half:
-                W[idx] = 1 + r * np.log(ratio)
-            else:
-                W[idx] = 1 - r * np.log(ratio)
-
-        # --- Objective 1: top-k leaders + fitness-proportional weights ---
-        kk = min(k, N)
         leader_idx = order[:kk]
         leader_fits = fitness[leader_idx]
-        # shift to strictly positive before normalizing (Kapur's entropy is
-        # always >= 0 in practice, but this keeps it robust either way)
-        shifted = leader_fits - min(0.0, float(leader_fits.min())) + 1e-9
-        w_leaders = shifted / shifted.sum()
 
-        vc = 1 - t / T
-        newX = X.copy()
-        for i in range(N):
-            if rng.random() < z:
-                newX[i] = rng.uniform(lb, ub, size=d)
-            else:
-                p = np.tanh(abs(fitness[i] - curr_bF))
-                vb = rng.uniform(-a, a, size=d)
-                ia, ib = rng.choice(N, 2, replace=False)
-                XA, XB = X[ia], X[ib]
-                if rng.random() < p:
-                    pos = np.zeros(d)
-                    for jl in range(kk):
-                        Lj = X[leader_idx[jl]]
-                        pos += w_leaders[jl] * (Lj + vb * (W[i] * XA - XB))
-                    newX[i] = pos
-                else:
-                    newX[i] = vc * X[i]
+        # --- 5.2: fitness weights w[j] = S(Lj) / sum(S(Lm)) ---
+        denom = leader_fits.sum()
+        w_leaders = leader_fits / denom if denom > 1e-12 else np.full(kk, 1.0 / kk)
+
+        # --- 5.3: adaptive weight W[i] (same W_i formula as standard SMA)
+        # -- vectorized, no Python-level agent loop ---
+        curr_bF = float(fitness[order[0]])
+        curr_wF = float(fitness[order[-1]])
+        half = N // 2
+        r_w = rng.random(N)
+        ratio = (curr_bF - fitness[order]) / (curr_bF - curr_wF + 1e-12) + 1
+        sign = np.where(np.arange(N) < half, 1.0, -1.0)
+        W_ordered = 1 + sign * r_w * np.log(ratio)
+        W = np.empty(N)
+        W[order] = W_ordered
+
+        # --- 5.4: EVERY agent moves via the multi-leader weighted
+        # formula, unconditionally (no branching -- see docstring).
+        # Vectorized across agents AND leaders via broadcasting/tensordot
+        # -- mathematically identical to summing per-leader per-agent in
+        # a Python loop, just without the loop overhead. ---
+        vb = rng.uniform(-a, a, size=(N, d))
+        ia = rng.integers(0, N, size=N)
+        ib = rng.integers(0, N, size=N)
+        clash = ia == ib
+        while np.any(clash):
+            ib[clash] = rng.integers(0, N, size=int(clash.sum()))
+            clash = ia == ib
+        XA = X[ia]                       # (N, d)
+        XB = X[ib]                       # (N, d)
+        inner = W[:, None] * XA - XB     # (N, d)
+        L = X[leader_idx]                # (kk, d)
+        # term[j, i, :] = L[j] + vb[i] * inner[i]  -> shape (kk, N, d)
+        term = L[:, None, :] + vb[None, :, :] * inner[None, :, :]
+        newX = np.tensordot(w_leaders, term, axes=(0, 0))  # (N, d)
 
         newX = np.clip(newX, lb, ub)
         newFitness = np.array([kapurs_entropy_fitness(newX[i], prob) for i in range(N)])
 
+        # --- 5.7/5.8: greedy update (keep the better of old/new per
+        # agent -- standard convention, prevents fitness regressing) ---
         improve = newFitness > fitness
         X[improve] = newX[improve]
         fitness[improve] = newFitness[improve]
@@ -294,20 +347,21 @@ def enhanced_sma(
         bF_history.append(bF)
         convergence.append(bF)
 
-        # --- Objective 3: performance-feedback adaptive control ---
+        # --- 5.5: compute CR(t) and PD(t) ---
         if t >= h:
             bF_prev = bF_history[t - h]
             # NOTE: sign flipped vs. the thesis formula because Kapur's
-            # entropy is MAXIMIZED here (bF increases as the run improves),
-            # whereas the thesis's CR formula assumes a minimization
-            # convention (bF decreases when improving). CR > 0 == "improving"
-            # in both cases with this adjustment -- flag this in your
-            # methodology writeup.
+            # entropy is MAXIMIZED here (bF increases as the run
+            # improves), whereas the thesis's CR formula as written
+            # assumes a minimization convention (bF decreases when
+            # improving -- confirmed by the thesis text itself: "when
+            # CR(t) is positive, indicating productive convergence").
+            # This adjustment preserves that intended meaning (CR > 0
+            # == productive convergence) under maximization.
             CR = (bF - bF_prev) / (abs(bF) + 1e-10)
         else:
             CR = 0.0
 
-        # mean pairwise distance / diameter
         if N > 1:
             diffs = X[:, None, :] - X[None, :, :]
             dist_sum = np.sqrt((diffs ** 2).sum(axis=-1)).sum()
@@ -315,6 +369,7 @@ def enhanced_sma(
         else:
             PD = 0.0
 
+        # --- 5.6: update z(t) and a(t) ---
         stagnating = (abs(CR) < cr_stall_eps) and (PD < pd_low_thresh)
         if stagnating:
             z = float(np.clip(z + alpha * (1 - PD) * (1 - CR), z_min, z_max))
@@ -322,8 +377,11 @@ def enhanced_sma(
         elif CR > 0:
             z = float(np.clip(z - beta * CR, z_min, z_max))
             a = max(a - delta * CR, 1e-6)
-        # else (CR < 0, i.e. got worse overall -- shouldn't happen with
-        # greedy selection, but kept for completeness): leave z, a unchanged
+
+        # store this iteration's diversity for next iteration's leader-count
+        # decision (adaptive_k) -- causally correct: k(t+1) is chosen using
+        # information available at the end of iteration t, same as z/a
+        PD_prev = PD
 
     elapsed = time.perf_counter() - t_start
     return {
