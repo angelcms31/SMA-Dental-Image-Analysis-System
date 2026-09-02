@@ -1,4 +1,4 @@
-import OpgAnalyzer from './OpgAnalyze.tsx';
+import OpgAnalyzer from './OpgAnalyzer.tsx';
 
 function App() {
   return (

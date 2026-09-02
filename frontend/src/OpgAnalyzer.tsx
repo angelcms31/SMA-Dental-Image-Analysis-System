@@ -2,6 +2,7 @@ import React, { useState, ChangeEvent } from 'react';
 import axios from 'axios';
 
 type AlgoTab = 'standard' | 'enhanced';
+type MainTab = 'standard' | 'enhanced' | 'diagnosis' | 'yolo';
 
 interface DetectedRegion {
   quadrant: 'Q1' | 'Q2' | 'Q3' | 'Q4';
@@ -9,6 +10,7 @@ interface DetectedRegion {
   bbox: [number, number, number, number];
   area_px: number;
   mean_intensity: number;
+  confidence?: number;
 }
 
 interface AnalyzeResult {
@@ -46,7 +48,8 @@ export default function OpgAnalyzer() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [originalPreview, setOriginalPreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<AlgoTab>('standard');
+  const [activeTab, setActiveTab] = useState<MainTab>('standard');
+  const [diagnosisAlgo, setDiagnosisAlgo] = useState<AlgoTab>('enhanced');
 
   // Hiwalay na resulta per tab, para hindi mawala yung Standard result
   // kapag lumipat ka papuntang Enhanced (kailangan mo silang dalawa
@@ -55,6 +58,9 @@ export default function OpgAnalyzer() {
     standard: null,
     enhanced: null,
   });
+  const [diagnosisResult, setDiagnosisResult] = useState<AnalyzeResult | null>(null);
+  const [yoloResult, setYoloResult] = useState<AnalyzeResult | null>(null);
+  const [yoloConf, setYoloConf] = useState<number>(0.25);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -62,6 +68,8 @@ export default function OpgAnalyzer() {
       setSelectedFile(file);
       setOriginalPreview(URL.createObjectURL(file));
       setResults({ standard: null, enhanced: null });
+      setDiagnosisResult(null);
+      setYoloResult(null);
     }
   };
 
@@ -96,7 +104,59 @@ export default function OpgAnalyzer() {
     }
   };
 
-  const currentResult = results[activeTab];
+  const handleDiagnose = async () => {
+    if (!selectedFile) return;
+
+    setIsProcessing(true);
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('algorithm', diagnosisAlgo);
+    formData.append('d', '4');
+    formData.append('N', '30');
+    formData.append('T', '150');
+
+    try {
+      const response = await axios.post<AnalyzeResult>(
+        'http://localhost:8000/analyze/classify-full/',
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      setDiagnosisResult(response.data);
+    } catch (error) {
+      console.error('Error running full diagnosis:', error);
+      alert('May error sa pag-connect sa backend. Siguraduhing tumatakbo ang FastAPI server.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleYoloDetect = async () => {
+    if (!selectedFile) return;
+
+    setIsProcessing(true);
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('conf', String(yoloConf));
+    formData.append('iou', '0.35');
+
+    try {
+      const response = await axios.post<AnalyzeResult>(
+        'http://localhost:8000/analyze/detect-teeth/',
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      setYoloResult(response.data);
+    } catch (error) {
+      console.error('Error running YOLO detection:', error);
+      alert('May error sa pag-connect sa backend. Siguraduhing tumatakbo ang FastAPI server.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const currentResult = activeTab === 'diagnosis' ? diagnosisResult : activeTab === 'yolo' ? yoloResult : results[activeTab as AlgoTab];
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 flex flex-col items-center font-sans">
@@ -149,18 +209,80 @@ export default function OpgAnalyzer() {
           >
             Enhanced SMA (ESMA)
           </button>
+          <button
+            onClick={() => setActiveTab('diagnosis')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'diagnosis'
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Full Diagnosis (supplementary)
+          </button>
+          <button
+            onClick={() => setActiveTab('yolo')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'yolo'
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Per-Tooth Detection (YOLO, supplementary)
+          </button>
         </div>
 
         {/* Analyze Button */}
-        <button
-          onClick={() => handleAnalyze(activeTab)}
-          disabled={!selectedFile || isProcessing}
-          className="w-full md:w-auto bg-blue-600 text-white px-8 py-2.5 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {isProcessing
-            ? `${activeTab === 'standard' ? 'Standard SMA' : 'ESMA'} is Computing Thresholds...`
-            : `Run ${activeTab === 'standard' ? 'Standard SMA' : 'ESMA'} Segmentation`}
-        </button>
+        {activeTab === 'diagnosis' ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={diagnosisAlgo}
+              onChange={(e) => setDiagnosisAlgo(e.target.value as AlgoTab)}
+              className="text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700"
+            >
+              <option value="standard">Standard SMA features</option>
+              <option value="enhanced">Enhanced SMA (ESMA) features</option>
+            </select>
+            <button
+              onClick={handleDiagnose}
+              disabled={!selectedFile || isProcessing}
+              className="bg-blue-600 text-white px-8 py-2.5 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isProcessing ? 'Detecting & Classifying...' : 'Run Full-Image Diagnosis'}
+            </button>
+          </div>
+        ) : activeTab === 'yolo' ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-sm text-gray-600 flex items-center gap-2">
+              Confidence threshold
+              <input
+                type="number"
+                min={0.05}
+                max={0.95}
+                step={0.05}
+                value={yoloConf}
+                onChange={(e) => setYoloConf(parseFloat(e.target.value))}
+                className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1.5 text-gray-700"
+              />
+            </label>
+            <button
+              onClick={handleYoloDetect}
+              disabled={!selectedFile || isProcessing}
+              className="bg-blue-600 text-white px-8 py-2.5 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isProcessing ? 'Detecting Teeth...' : 'Run YOLO Tooth Detection'}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => handleAnalyze(activeTab as AlgoTab)}
+            disabled={!selectedFile || isProcessing}
+            className="w-full md:w-auto bg-blue-600 text-white px-8 py-2.5 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isProcessing
+              ? `${activeTab === 'standard' ? 'Standard SMA' : 'ESMA'} is Computing Thresholds...`
+              : `Run ${activeTab === 'standard' ? 'Standard SMA' : 'ESMA'} Segmentation`}
+          </button>
+        )}
 
         {/* Non-clinical disclaimer -- always visible once a result exists.
             Required because patients, not just the thesis panel, may see
@@ -188,7 +310,12 @@ export default function OpgAnalyzer() {
 
           <div className="flex flex-col">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 border-b pb-2">
-              Findings Overview ({activeTab === 'standard' ? 'Standard SMA' : 'ESMA'})
+              Findings Overview ({
+                activeTab === 'standard' ? 'Standard SMA' :
+                activeTab === 'enhanced' ? 'ESMA' :
+                activeTab === 'yolo' ? 'YOLO Per-Tooth Detection' :
+                `Full Diagnosis — ${diagnosisAlgo === 'standard' ? 'Standard SMA' : 'ESMA'}`
+              })
             </h3>
             <div className="bg-gray-100 min-h-[300px] flex items-center justify-center rounded border border-gray-200 overflow-hidden">
               {isProcessing ? (
@@ -220,7 +347,14 @@ export default function OpgAnalyzer() {
                   <div key={idx} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-md px-3 py-2">
                     <span className={`w-3 h-3 rounded-full flex-shrink-0 ${QUADRANT_DOT_COLOR[region.quadrant]}`} />
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">{region.label}</p>
+                      <p className="text-sm font-semibold text-slate-800">
+                        {region.label}
+                        {region.confidence != null && (
+                          <span className="ml-1 text-xs font-normal text-gray-500">
+                            ({Math.round(region.confidence * 100)}% confidence)
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs text-gray-500">
                         {QUADRANT_LABELS[region.quadrant]} · area {region.area_px}px
                       </p>
@@ -232,8 +366,10 @@ export default function OpgAnalyzer() {
           </div>
         )}
 
-        {/* Accuracy metrics -- para sa Chapter 4 comparative analysis */}
-        {currentResult?.status === 'success' && (
+        {/* Accuracy metrics -- para sa Chapter 4 comparative analysis
+            (segmentation tabs only; the diagnosis tab has its own
+            accuracy caveats shown via the disclaimer instead) */}
+        {activeTab !== 'diagnosis' && activeTab !== 'yolo' && currentResult?.status === 'success' && (
           <div className="mt-6 border-t pt-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Performance Metrics</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
