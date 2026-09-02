@@ -62,27 +62,69 @@ BAND_LABELS = {
 
 def _detect_dental_arch_band(gray_image, x0, x1):
     """
-    Auto-detects the vertical (y) band that actually contains the teeth,
-    instead of a fixed fraction of image height. Teeth/roots produce much
-    higher local contrast (edges) than sinus cavities or soft tissue, so
-    we use row-wise edge energy to find the band, with safety fallbacks.
+    Auto-detects the vertical (y) band that actually contains the teeth.
+    Uses the DENSITY (not cumulative mass) of small, discrete bright
+    connected components (individual tooth crowns): builds a smoothed
+    histogram of tooth-sized component y-centroids and expands outward
+    from its peak while density stays reasonably high. This is robust
+    to a scattered handful of similarly-sized bright blobs elsewhere
+    (e.g. bone texture in the sinus/maxilla, which is often just as
+    "tooth-sized" individually) -- those show up as scattered, LOW-
+    density noise rather than the tight, high-density cluster teeth
+    form, so they don't drag the detected band wide the way a
+    cumulative-percentile range would.
     """
     h = gray_image.shape[0]
-    strip = gray_image[:, x0:x1].astype(np.float32)
-    lap = cv2.Laplacian(strip, cv2.CV_32F, ksize=3)
-    row_energy = np.mean(np.abs(lap), axis=1)
+    strip = gray_image[:, x0:x1]
+    strip_area = strip.shape[0] * strip.shape[1]
 
-    # smooth the row-energy profile
-    k = max(5, h // 60)
-    kernel = np.ones(k, dtype=np.float32) / k
-    row_energy = np.convolve(row_energy, kernel, mode="same")
+    content_mask = strip > 10
+    if content_mask.sum() < 100:
+        return int(h * 0.30), int(h * 0.75)
+    content_vals = strip[content_mask].astype(np.uint8)
+    otsu_thresh, _ = cv2.threshold(
+        content_vals.reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+    bright_mask = ((strip > otsu_thresh) & content_mask).astype(np.uint8) * 255
 
-    threshold = np.percentile(row_energy, 55)
-    above = row_energy > threshold
+    n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(bright_mask, connectivity=8)
 
-    # find the longest contiguous run of rows above threshold
+    min_area = strip_area * 0.00005
+    max_area = strip_area * 0.01
+    tooth_ys = []
+    for i in range(1, n_labels):  # label 0 is background
+        area = stats[i, cv2.CC_STAT_AREA]
+        if min_area < area < max_area:
+            tooth_ys.append(centroids[i][1])
+
+    if len(tooth_ys) < 6:
+        return int(h * 0.30), int(h * 0.75)
+
+    tooth_ys = np.array(sorted(tooth_ys))
+
+    # Longest-contiguous-run approach: bin the tooth-sized component
+    # y-centroids, then find the longest run of bins that each contain
+    # at least one component. Real teeth form a dense, contiguous row,
+    # so this run should span the whole tooth row; a handful of
+    # scattered tooth-sized blobs elsewhere (e.g. sinus/bone texture)
+    # show up as isolated bins separated by empty gaps and don't get
+    # included, regardless of how far from the main cluster they sit --
+    # unlike a percentile/IQR-based range, which can still be dragged
+    # by a few distant points depending on how many there are.
+    bin_size = max(15, int(h * 0.02))
+    n_bins = int(np.ceil(h / bin_size))
+    bin_idx = np.clip((tooth_ys // bin_size).astype(int), 0, n_bins - 1)
+    occupied = np.zeros(n_bins, dtype=bool)
+    occupied[np.unique(bin_idx)] = True
+
+    # allow a single-bin gap to bridge (teeth aren't perfectly evenly spaced)
+    bridged = occupied.copy()
+    for i in range(1, n_bins - 1):
+        if not bridged[i] and occupied[i - 1] and occupied[i + 1]:
+            bridged[i] = True
+
     best_start, best_len, cur_start, cur_len = 0, 0, 0, 0
-    for i, v in enumerate(above):
+    for i, v in enumerate(bridged):
         if v:
             if cur_len == 0:
                 cur_start = i
@@ -92,15 +134,18 @@ def _detect_dental_arch_band(gray_image, x0, x1):
         else:
             cur_len = 0
 
-    if best_len < h * 0.12:
-        # detection failed / too small a band -- fall back to a safe default
-        return int(h * 0.30), int(h * 0.85)
+    if best_len == 0:
+        return int(h * 0.30), int(h * 0.75)
 
-    y0, y1 = best_start, best_start + best_len
-    # small margin, then clamp to sane bounds
-    margin = int(best_len * 0.08)
-    y0 = max(int(h * 0.08), y0 - margin)
-    y1 = min(int(h * 0.95), y1 + margin)
+    y0f = best_start * bin_size
+    y1f = min(h, (best_start + best_len) * bin_size)
+
+    if y1f - y0f < h * 0.06:
+        return int(h * 0.30), int(h * 0.75)
+
+    margin = (y1f - y0f) * 0.15
+    y0 = max(0, int(y0f - margin))
+    y1 = min(h, int(y1f + margin))
     return y0, y1
 
 
@@ -149,19 +194,77 @@ def _non_max_suppress(regions, iou_thresh=0.25, max_per_quadrant=6):
     return kept
 
 
+def _tooth_material_mask(gray_image, roi_mask):
+    """
+    Rough mask of "this is actual tooth material" (enamel/dentin/root),
+    used to keep abnormality detection anchored to teeth rather than
+    open background gaps. Otsu (not a fixed percentile) is used because
+    the background-vs-tooth pixel ratio varies a lot between images
+    (e.g. partial dentition with large edentulous gaps).
+    """
+    roi_pixels = gray_image[roi_mask > 0]
+    if roi_pixels.size < 50:
+        return roi_mask.copy()
+
+    tooth_thresh, _ = cv2.threshold(
+        roi_pixels.reshape(-1, 1).astype(np.uint8), 0, 255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+    )
+    tooth_mask = ((gray_image > tooth_thresh).astype(np.uint8)) * 255
+    tooth_mask = cv2.bitwise_and(tooth_mask, roi_mask)
+
+    close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    tooth_mask = cv2.morphologyEx(tooth_mask, cv2.MORPH_CLOSE, close_k)
+
+    dilate_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    near_tooth = cv2.dilate(tooth_mask, dilate_k)
+    return near_tooth
+
+
+def _local_darkness_response(gray_image, roi_mask, roi_w):
+    """
+    Black-top-hat morphology: highlights small, LOCAL dark spots relative
+    to their immediate surroundings, and -- this is the important part --
+    does NOT flag broad, uniformly dark regions (like a whole root, or a
+    whole background gap) as long as those regions are wider than the
+    structuring element. This is what actually distinguishes "a small
+    dark spot on/near a tooth" from "this whole area is dark," which a
+    plain intensity-band threshold cannot tell apart on its own.
+    """
+    k_size = int(np.clip(roi_w * 0.018, 15, 51))
+    if k_size % 2 == 0:
+        k_size += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+    tophat = cv2.morphologyEx(gray_image, cv2.MORPH_BLACKHAT, kernel)
+    tophat = cv2.bitwise_and(tophat, tophat, mask=roi_mask)
+    return tophat
+
+
 def generate_annotated_overlay(
     gray_image: np.ndarray,
     thresholds,
     roi_x=(0.03, 0.97),
     min_area_frac=0.00025,   # relative to ROI area -- scales with image size
-    max_area_frac=0.02,
+    max_area_frac=0.012,
+    max_box_w_frac=0.12,     # NEW: hard cap on box width relative to ROI width
+    max_box_h_frac=0.35,     # NEW: hard cap on box height relative to ROI height
     min_aspect=0.3,
     max_aspect=3.0,
-    iou_thresh=0.25,
+    iou_thresh=0.2,
     max_per_quadrant=6,
+    label_fn=None,
 ):
     """
     Returns (overlay_image_bgr, detected_regions, quadrant_summary).
+
+    label_fn: optional callable(crop: np.ndarray) -> (label: str, confidence: float).
+    When provided (e.g. wired to the trained DENTEX Random Forest
+    classifier in main.py), it REPLACES the darkness-rank heuristic
+    below for assigning a label to each detected region -- each
+    region's actual pixel crop is passed through label_fn, and its
+    "confidence" is included in the returned region dict. When
+    label_fn is None (the default), the darkness-rank heuristic
+    documented above is used instead, exactly as before.
     """
     h, w = gray_image.shape
     output = cv2.cvtColor(gray_image, cv2.COLOR_GRAY2BGR)
@@ -170,54 +273,87 @@ def generate_annotated_overlay(
     x0, x1 = int(w * roi_x[0]), int(w * roi_x[1])
     y0, y1 = _detect_dental_arch_band(gray_image, x0, x1)
     x_mid, y_mid = w / 2.0, (y0 + y1) / 2.0
+    roi_w, roi_h = x1 - x0, y1 - y0
 
     roi_mask = np.zeros((h, w), dtype=np.uint8)
     roi_mask[y0:y1, x0:x1] = 255
-    roi_area = (y1 - y0) * (x1 - x0)
+    roi_area = roi_w * roi_h
     min_area = max(80, roi_area * min_area_frac)
     max_area = roi_area * max_area_frac
+    max_box_w = roi_w * max_box_w_frac
+    max_box_h = roi_h * max_box_h_frac
 
     close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
     bounds = [0] + sorted(int(round(t)) for t in thresholds) + [256]
+    n_flag_bands = min(len(BAND_LABELS), len(bounds) - 1)
+
+    # WHERE to flag: local-contrast anomaly detection (tophat), anchored
+    # to actual tooth material -- this is what avoids flagging whole
+    # roots / whole background gaps (see function docstrings above).
+    near_tooth_mask = _tooth_material_mask(gray_image, roi_mask)
+    tophat = _local_darkness_response(gray_image, roi_mask, roi_w)
+    tophat_roi_vals = tophat[roi_mask > 0]
+    if tophat_roi_vals.size == 0 or tophat_roi_vals.max() == 0:
+        return output, [], {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
+
+    tophat_thresh = max(float(np.percentile(tophat_roi_vals, 92)), 12.0)
+    anomaly_mask = ((tophat > tophat_thresh).astype(np.uint8)) * 255
+    anomaly_mask = cv2.bitwise_and(anomaly_mask, roi_mask)
+    anomaly_mask = cv2.bitwise_and(anomaly_mask, near_tooth_mask)
+    anomaly_mask = cv2.morphologyEx(anomaly_mask, cv2.MORPH_CLOSE, close_kernel)
+    anomaly_mask = cv2.morphologyEx(anomaly_mask, cv2.MORPH_OPEN, close_kernel)
+
+    contours, _ = cv2.findContours(anomaly_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
     candidates = []
-
-    for band_idx in range(len(bounds) - 1):
-        label = BAND_LABELS.get(band_idx)
-        if label is None:
-            continue  # lighter bands (healthy bone/enamel) are not flagged
-
-        lo, hi = bounds[band_idx], bounds[band_idx + 1]
-        if hi <= lo:
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if not (min_area < area < max_area):
+            continue
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        if bw > max_box_w or bh > max_box_h:
+            continue
+        aspect = bw / float(bh) if bh > 0 else 0
+        if not (min_aspect < aspect < max_aspect):
             continue
 
-        intensity_mask = cv2.inRange(gray_image, lo, max(hi - 1, lo))
-        mask = cv2.bitwise_and(intensity_mask, roi_mask)
-        # merge nearby speckle into coherent blobs, drop single-pixel noise
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, close_kernel)
+        # WHAT to call it: use the trained classifier if one was given
+        # (label_fn), otherwise fall back to the darkness-rank heuristic
+        # tied to the SMA/ESMA threshold bands (see module docstring).
+        patch = gray_image[y:y + bh, x:x + bw]
+        confidence = None
+        if label_fn is not None:
+            try:
+                label, confidence = label_fn(patch)
+            except Exception:
+                # a single region failing classification shouldn't kill
+                # the whole overlay -- fall back to the heuristic for it
+                band_counts = [
+                    int(np.sum((patch >= bounds[bi]) & (patch < bounds[bi + 1])))
+                    for bi in range(n_flag_bands)
+                ]
+                label = BAND_LABELS[int(np.argmax(band_counts))]
+        else:
+            band_counts = [
+                int(np.sum((patch >= bounds[bi]) & (patch < bounds[bi + 1])))
+                for bi in range(n_flag_bands)
+            ]
+            label = BAND_LABELS[int(np.argmax(band_counts))]
 
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if not (min_area < area < max_area):
-                continue
-            x, y, bw, bh = cv2.boundingRect(cnt)
-            aspect = bw / float(bh) if bh > 0 else 0
-            if not (min_aspect < aspect < max_aspect):
-                continue
-
-            cx, cy = x + bw / 2.0, y + bh / 2.0
-            quadrant = _quadrant_for(cx, cy, x_mid, y_mid)
-            mean_intensity = float(gray_image[y:y + bh, x:x + bw].mean())
-            candidates.append({
-                "quadrant": quadrant,
-                "label": label,
-                "bbox": [int(x), int(y), int(bw), int(bh)],
-                "area_px": int(area),
-                "mean_intensity": round(mean_intensity, 2),
-            })
+        cx, cy = x + bw / 2.0, y + bh / 2.0
+        quadrant = _quadrant_for(cx, cy, x_mid, y_mid)
+        mean_intensity = float(patch.mean())
+        region_dict = {
+            "quadrant": quadrant,
+            "label": label,
+            "bbox": [int(x), int(y), int(bw), int(bh)],
+            "area_px": int(area),
+            "mean_intensity": round(mean_intensity, 2),
+        }
+        if confidence is not None:
+            region_dict["confidence"] = round(float(confidence), 4)
+        candidates.append(region_dict)
 
     detected = _non_max_suppress(candidates, iou_thresh=iou_thresh, max_per_quadrant=max_per_quadrant)
 
@@ -234,7 +370,10 @@ def generate_annotated_overlay(
     for region in detected:
         x, y, bw, bh = region["bbox"]
         color = QUADRANT_COLORS[region["quadrant"]]
-        text = f'Q={region["quadrant"][1]} D={region["label"]}'
+        if "confidence" in region:
+            text = f'Q={region["quadrant"][1]} D={region["label"]} ({region["confidence"]*100:.0f}%)'
+        else:
+            text = f'Q={region["quadrant"][1]} D={region["label"]}'
         ty = max(y - 8, 15)
         cv2.putText(blended, text, (x, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
         cv2.putText(blended, text, (x, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)

@@ -1,17 +1,56 @@
-datasets/*
-datasets/**/*
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+.pytest_cache/
 
-!datasets/**/.gitkeep
-!datasets/.gitkeep
+# ===== Environment / secrets =====
+.env
+.env.local
 
-*.jpg
-*.jpeg
-*.png
-*.json
-*.csv
-*.npy
-*.zip
-*.tar.gz
+# ===== Datasets (large, regenerable from source) =====
+Datasets/
+yolo_dataset_standard/
+yolo_dataset_enhanced/
+yolo_dataset_standard_v*/
+yolo_dataset_enhanced_v*/
+yolo_dataset/
+yolo_esma_test/
+mendeley_label_check/
 
-esma_tuning_results.json
+# ===== Trained models / weights (large binary files) =====
+models/
+runs/
+runs_yolo/
+*.pt
+*.pth
+*.joblib
+*.onnx
+
+# ===== Generated result files (regenerate by re-running scripts) =====
 full_image_comparison.json
+convergence_speed_analysis.json
+esma_tuning_results.json
+esma_full_image_tuning.json
+comparison_summary.json
+*.png
+!README_assets/**.png
+
+# ===== IDE / editor =====
+.vscode/
+.idea/
+*.swp
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Logs =====
+*.log

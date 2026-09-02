@@ -49,27 +49,49 @@ def compute_histogram_prob(gray_image: np.ndarray) -> np.ndarray:
     return hist / total
 
 
-def autocrop_black_borders(gray_image: np.ndarray, black_thresh: int = 8) -> np.ndarray:
+def autocrop_black_borders(gray_image: np.ndarray, black_thresh: int = 8,
+                            white_thresh: int = 247, row_std_thresh: float = 3.0) -> np.ndarray:
     """
-    Crops away solid/near-black letterboxing borders (common in exported
-    OPG images that pad the film to a fixed canvas size) before the image
-    is used for anything -- histogram, SMA/ESMA optimization, or the
-    overlay. Left uncropped, a large black border dominates the pixel
-    count near intensity 0 and skews Kapur's entropy toward separating
-    "black border vs. content" rather than actual anatomical structures.
+    Crops away solid, near-uniform letterboxing borders -- both BLACK
+    padding and WHITE padding (some exported OPG images have a solid
+    white frame at the top/bottom instead of black; a full-white row is
+    just as much "not anatomical content" as a full-black one). This
+    runs before the image is used for anything -- histogram, SMA/ESMA
+    optimization, or the overlay. Left uncropped, a uniform border
+    (black OR white) dominates the pixel count at one intensity extreme
+    and skews Kapur's entropy toward separating "border vs. content"
+    rather than actual anatomical structures, and can fool
+    brightness-based heuristics (like the overlay's arch-band detector)
+    into thinking the border is the brightest, most relevant region.
+
+    A row/column counts as padding only if it is BOTH near-uniform (low
+    std -- real tissue always has texture) AND near an intensity
+    extreme (very dark or very bright) -- this avoids accidentally
+    stripping a genuinely bright but textured anatomical row.
     Falls back to the original image untouched if no clear border is found.
     """
-    mask = gray_image > black_thresh
-    rows = np.where(mask.any(axis=1))[0]
-    cols = np.where(mask.any(axis=0))[0]
-    if len(rows) == 0 or len(cols) == 0:
-        return gray_image
-    y0, y1 = int(rows.min()), int(rows.max()) + 1
-    x0, x1 = int(cols.min()), int(cols.max()) + 1
+    h, w = gray_image.shape
+
+    def _is_padding_row(row):
+        return row.std() < row_std_thresh and (row.mean() < black_thresh or row.mean() > white_thresh)
+
+    top = 0
+    while top < h and _is_padding_row(gray_image[top, :]):
+        top += 1
+    bottom = h
+    while bottom > top and _is_padding_row(gray_image[bottom - 1, :]):
+        bottom -= 1
+    left = 0
+    while left < w and _is_padding_row(gray_image[:, left]):
+        left += 1
+    right = w
+    while right > left and _is_padding_row(gray_image[:, right - 1]):
+        right -= 1
+
     # sanity check -- don't crop away almost everything on a weird image
-    if (y1 - y0) < gray_image.shape[0] * 0.2 or (x1 - x0) < gray_image.shape[1] * 0.2:
+    if (bottom - top) < h * 0.2 or (right - left) < w * 0.2:
         return gray_image
-    return gray_image[y0:y1, x0:x1]
+    return gray_image[top:bottom, left:right]
 
 
 def kapurs_entropy_fitness(thresholds, prob: np.ndarray) -> float:
