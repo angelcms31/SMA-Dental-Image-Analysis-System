@@ -21,13 +21,16 @@ import numpy as np
 
 from sma_preprocess import sma_preprocess
 
-# Same quadrant color scheme as overlay.py, kept consistent across the system
-QUADRANT_COLORS = {
-    "Q1": (0, 170, 0),
-    "Q2": (0, 0, 220),
-    "Q3": (200, 130, 0),
-    "Q4": (0, 210, 210),
+# Colored by DIAGNOSIS TYPE (not quadrant) so a finding's severity/category
+# is identifiable at a glance -- kept consistent with the frontend legend
+# (OpgAnalyzer.tsx DIAGNOSIS_ACCENT). BGR order for OpenCV.
+DIAGNOSIS_COLORS = {
+    "Caries": (61, 163, 232),             # amber
+    "Deep Caries": (76, 96, 232),         # coral/red -- more severe than Caries
+    "Impacted": (191, 95, 139),           # purple -- structural, not decay-related
+    "Periapical Lesion": (232, 143, 76),  # blue
 }
+DEFAULT_COLOR = (180, 180, 180)  # gray fallback for any unrecognized label
 
 
 def _quadrant_for(cx, cy, x_mid, y_mid):
@@ -125,14 +128,14 @@ def run_yolo_detection(image_bgr, weights_path, conf_thresh=0.25, iou_thresh=0.3
     overlay = output.copy()
     for region in detected:
         x, y, bw, bh = region["bbox"]
-        color = QUADRANT_COLORS[region["quadrant"]]
+        color = DIAGNOSIS_COLORS.get(region["label"], DEFAULT_COLOR)
         overlay[y:y + bh, x:x + bw] = color
         cv2.rectangle(output, (x, y), (x + bw, y + bh), color, 2)
 
     blended = cv2.addWeighted(overlay, 0.30, output, 0.70, 0)
     for region in detected:
         x, y, bw, bh = region["bbox"]
-        color = QUADRANT_COLORS[region["quadrant"]]
+        color = DIAGNOSIS_COLORS.get(region["label"], DEFAULT_COLOR)
         text = f'Q={region["quadrant"][1]} D={region["label"]} ({region["confidence"]*100:.0f}%)'
         ty = max(y - 8, 15)
         cv2.putText(blended, text, (x, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)

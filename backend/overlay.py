@@ -51,6 +51,17 @@ QUADRANT_COLORS = {
     "Q4": (0, 210, 210),
 }
 
+# Colored by DIAGNOSIS TYPE (not quadrant) so a finding's severity/category
+# is identifiable at a glance -- kept consistent with predict_yolo.py and
+# the frontend legend (OpgAnalyzer.tsx DIAGNOSIS_ACCENT). BGR for OpenCV.
+DIAGNOSIS_COLORS = {
+    "Caries": (61, 163, 232),             # amber
+    "Deep Caries": (76, 96, 232),         # coral/red -- more severe than Caries
+    "Impacted": (191, 95, 139),           # purple -- structural, not decay-related
+    "Periapical Lesion": (232, 143, 76),  # blue
+}
+DEFAULT_COLOR = (180, 180, 180)  # gray fallback for any unrecognized label
+
 # darkness-rank band index -> label (see module docstring for caveats)
 BAND_LABELS = {
     0: "Impacted",
@@ -359,7 +370,7 @@ def generate_annotated_overlay(
 
     for region in detected:
         x, y, bw, bh = region["bbox"]
-        color = QUADRANT_COLORS[region["quadrant"]]
+        color = DIAGNOSIS_COLORS.get(region["label"], DEFAULT_COLOR)
         overlay_patch = overlay[y:y + bh, x:x + bw]
         color_patch = np.full_like(overlay_patch, color, dtype=np.uint8)
         overlay[y:y + bh, x:x + bw] = color_patch
@@ -369,7 +380,7 @@ def generate_annotated_overlay(
 
     for region in detected:
         x, y, bw, bh = region["bbox"]
-        color = QUADRANT_COLORS[region["quadrant"]]
+        color = DIAGNOSIS_COLORS.get(region["label"], DEFAULT_COLOR)
         if "confidence" in region:
             text = f'Q={region["quadrant"][1]} D={region["label"]} ({region["confidence"]*100:.0f}%)'
         else:
