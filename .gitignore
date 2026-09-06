@@ -40,6 +40,8 @@ convergence_speed_analysis.json
 esma_tuning_results.json
 esma_full_image_tuning.json
 comparison_summary.json
+three_way_comparison*.json
+esma_v2_ablation*.json
 *.png
 !README_assets/**.png
 

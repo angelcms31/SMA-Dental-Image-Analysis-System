@@ -198,5 +198,6 @@ if __name__ == "__main__":
 
     run_comparison(args.images_dir, args.max_images, args.N, args.T, args.d, args.seed,
                     args.out, esma_params=esma_params, shuffle=not args.no_shuffle)
-    args = parser.parse_args()
-    run_comparison(args.images_dir, args.max_images, args.N, args.T, args.d, args.seed, args.out)
+    # (a leftover second parse_args()/run_comparison() call used to sit here: it
+    # re-ran the ENTIRE benchmark a second time, ignoring every --esma_* override
+    # and overwriting the JSON -- doubling the runtime of every reported run)

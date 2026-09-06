@@ -36,6 +36,7 @@ from sma_algorithms import (
     autocrop_black_borders,
     compute_histogram_prob,
     enhanced_sma,
+    enhanced_sma_v2,
     kapurs_entropy_fitness,
     standard_sma,
 )
@@ -90,6 +91,8 @@ def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed, **extra_kwa
         "psnr": round(psnr, 4) if psnr != float("inf") else None,
         "ssim": round(ssim, 6),
         "runtime_sec": round(result["runtime_sec"], 4),
+        # ESMA v2 may stop early (adaptive termination); legacy algorithms always run T iterations
+        "iterations_used": result.get("iterations_used", len(result["convergence"]) - 1),
         "convergence_curve": [round(v, 6) for v in result["convergence"]],
         "segmented_image": _encode_image(segmented),
         "annotated_image": _encode_image(annotated),
@@ -144,19 +147,65 @@ async def analyze_enhanced(
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/analyze/improved/")
+async def analyze_improved(
+    file: UploadFile = File(...),
+    d: int = Form(4),
+    N: int = Form(30),
+    T: int = Form(100),
+    seed: int = Form(None),
+    k: int = Form(3),
+    early_stop: bool = Form(True),   # adaptive termination (ESMA v2 addition)
+    patience: int = Form(20),
+):
+    """
+    Runs ESMA v2 (enhanced_sma_v2): the three thesis objectives with the v1
+    defects repaired (canonical ordering, Latin-hypercube quasi-uniform
+    initialization, sampled fitness-weighted multi-leader guidance, bounded
+    normalized feedback control of z(t)/a(t), adaptive termination). Same
+    response shape as /analyze/enhanced/ plus `iterations_used`.
+    """
+    try:
+        contents = await file.read()
+        image = _decode_image(contents)
+        prob = compute_histogram_prob(image)
+        result = _run_and_package(
+            "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed,
+            k=k, early_stop=early_stop, patience=patience,
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def _gains(base, other):
+    return {
+        "entropy_gain": round(other["kapur_entropy_fitness"] - base["kapur_entropy_fitness"], 6),
+        "psnr_gain": (
+            round(other["psnr"] - base["psnr"], 4)
+            if other["psnr"] is not None and base["psnr"] is not None
+            else None
+        ),
+        "ssim_gain": round(other["ssim"] - base["ssim"], 6),
+        "runtime_diff_sec": round(other["runtime_sec"] - base["runtime_sec"], 4),
+    }
+
+
 @app.post("/analyze/compare/")
 async def analyze_compare(
     file: UploadFile = File(...),
     d: int = Form(4),
     N: int = Form(30),
     T: int = Form(100),
-    seed: int = Form(42),   # same seed for both -> fair side-by-side comparison
+    seed: int = Form(42),   # same seed for all -> fair side-by-side comparison
 ):
     """
-    Runs Standard SMA and ESMA on the SAME image with the SAME
-    population/iteration/seed settings. This is the endpoint your
+    Runs Standard SMA, the original ESMA and ESMA v2 on the SAME image with
+    the SAME population/iteration/seed settings. This is the endpoint your
     Chapter 4 comparative-analysis table should pull from, since it
-    guarantees both algorithms saw identical conditions.
+    guarantees all algorithms saw identical conditions. The original keys
+    (`standard`, `enhanced`, `improvement`) are unchanged; `improved` and
+    `improvement_v2` (ESMA v2 vs Standard SMA) are additive.
     """
     try:
         contents = await file.read()
@@ -169,27 +218,18 @@ async def analyze_compare(
         enhanced_result = _run_and_package(
             "Enhanced SMA (ESMA)", enhanced_sma, image, prob, d, N, T, seed
         )
-
-        improvement = {
-            "entropy_gain": round(
-                enhanced_result["kapur_entropy_fitness"] - standard_result["kapur_entropy_fitness"], 6
-            ),
-            "psnr_gain": (
-                round(enhanced_result["psnr"] - standard_result["psnr"], 4)
-                if enhanced_result["psnr"] is not None and standard_result["psnr"] is not None
-                else None
-            ),
-            "ssim_gain": round(enhanced_result["ssim"] - standard_result["ssim"], 6),
-            "runtime_diff_sec": round(
-                enhanced_result["runtime_sec"] - standard_result["runtime_sec"], 4
-            ),
-        }
+        improved_result = _run_and_package(
+            "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed
+        )
 
         return {
             "status": "success",
             "standard": standard_result,
             "enhanced": enhanced_result,
-            "improvement": improvement,
+            "improved": improved_result,
+            "improvement": _gains(standard_result, enhanced_result),
+            "improvement_v2": _gains(standard_result, improved_result),
+            "improvement_v2_vs_v1": _gains(enhanced_result, improved_result),
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
