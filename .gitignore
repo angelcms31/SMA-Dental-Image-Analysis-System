@@ -33,6 +33,7 @@ runs_yolo/
 *.pth
 *.joblib
 *.onnx
+yolo_dataset_v2/
 
 # ===== Generated result files (regenerate by re-running scripts) =====
 full_image_comparison.json

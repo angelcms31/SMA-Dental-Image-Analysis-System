@@ -144,7 +144,7 @@ if __name__ == "__main__":
     parser.add_argument("--target_dataset_dir", required=True,
                          help="e.g. ./yolo_dataset_standard or ./yolo_dataset_enhanced -- "
                               "must already exist (created by dentex_to_yolo.py)")
-    parser.add_argument("--sma_algorithm", choices=["standard", "enhanced", "none"], default="none",
+    parser.add_argument("--sma_algorithm", choices=["standard", "enhanced", "enhanced_v2", "none"], default="none",
                          help="Must match how the target dataset was preprocessed. Use 'none' "
                               "if the target dataset was created WITHOUT --use_esma.")
     parser.add_argument("--val_fraction", type=float, default=0.15)

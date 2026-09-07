@@ -169,7 +169,7 @@ if __name__ == "__main__":
                          help="Preprocess every image with SMA/ESMA segmentation before saving "
                               "(per adviser's integration requirement) -- much slower, since "
                               "the algorithm runs once per image during conversion.")
-    parser.add_argument("--sma_algorithm", choices=["standard", "enhanced"], default="enhanced",
+    parser.add_argument("--sma_algorithm", choices=["standard", "enhanced", "enhanced_v2"], default="enhanced",
                          help="Which algorithm does the preprocessing when --use_esma is set. "
                               "Run this script TWICE (once with each) to get comparable "
                               "'YOLO+Standard' vs 'YOLO+ESMA' datasets -- use different --out_dir "

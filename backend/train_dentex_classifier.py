@@ -3,9 +3,9 @@ train_dentex_classifier.py
 ---------------------------
 Full pipeline: DENTEX JSON + images -> per-tooth crop -> SMA/ESMA
 segmentation (feature extraction) -> Random Forest classifier ->
-cross-validated accuracy report, comparing Standard SMA-derived
-features against Enhanced SMA (ESMA)-derived features. Saves the
-final trained model for each algorithm to disk.
+cross-validated accuracy report, comparing Standard SMA-derived,
+Enhanced SMA (ESMA v1)-derived, and ESMA v2-derived features. Saves
+the final trained model for each algorithm to disk.
 
 This directly tests the thesis's core hypothesis on a DOWNSTREAM task:
 if ESMA produces better segmentation than Standard SMA, a classifier
@@ -31,10 +31,8 @@ Usage:
     python train_dentex_classifier.py \
         --json train_quadrant_enumeration_disease.json \
         --images_dir ./xrays \
-        --sma_iterations 40 --sma_population 20
-
-Requires: opencv-python-headless, numpy, scikit-learn, scikit-image,
-joblib (same stack as the rest of the thesis system -- see requirements.txt)
+        --sma_iterations 40 --sma_population 20 \
+        --include_v2
 """
 
 import argparse
@@ -49,7 +47,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
-from sma_algorithms import compute_histogram_prob, enhanced_sma, standard_sma
+from sma_algorithms import compute_histogram_prob, enhanced_sma, enhanced_sma_v2, standard_sma
 
 
 def load_dentex(json_path, images_dir):
@@ -61,24 +59,32 @@ def load_dentex(json_path, images_dir):
     id_to_file = {img["id"]: img["file_name"] for img in data["images"]}
 
     n_skipped = 0
+    image_cache = {}
     for ann in data["annotations"]:
         filename = id_to_file.get(ann["image_id"])
         if filename is None:
             n_skipped += 1
             continue
-        img_path = os.path.join(images_dir, filename)
 
-        try:
-            image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-        except cv2.error as e:
-            # a single corrupted/truncated file shouldn't kill the whole
-            # run -- skip it and keep going, but tell the user which file
-            print(f"  [skip] could not read '{filename}' ({e.__class__.__name__}: {e})")
-            n_skipped += 1
-            continue
+        if filename not in image_cache:
+            img_path = os.path.join(images_dir, filename)
+            image = None
+            try:
+                image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            except cv2.error:
+                pass
+            if image is None:
+                try:
+                    from PIL import Image
+                    image = np.array(Image.open(img_path).convert("L"))
+                except Exception:
+                    image = None
+            if image is None:
+                print(f"  [skip] could not read '{filename}' (tried OpenCV and Pillow)")
+            image_cache[filename] = image
 
+        image = image_cache[filename]
         if image is None:
-            print(f"  [skip] '{filename}' decoded to None (missing, unreadable, or not an image)")
             n_skipped += 1
             continue
 
@@ -148,7 +154,8 @@ FEATURE_NAMES = [
 ]
 
 
-def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_dir, use_adaptive_k=False):
+def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_dir,
+                  use_adaptive_k=False, include_v2=False, skip_v1=False):
     print("Loading DENTEX crops...")
     crops, labels = [], []
     for crop, label in load_dentex(json_path, images_dir):
@@ -166,10 +173,13 @@ def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_di
     os.makedirs(out_dir, exist_ok=True)
     summary = {}
 
-    algo_specs = [
-        ("standard", standard_sma, {}),
-        ("enhanced", enhanced_sma, {"adaptive_k": True} if use_adaptive_k else {}),
-    ]
+    algo_specs = [("standard", standard_sma, {})]
+    if not skip_v1:
+        algo_specs.append(("enhanced", enhanced_sma, {"adaptive_k": True} if use_adaptive_k else {}))
+    if include_v2:
+        # v2 defaults already include early_stop=True, k=5, lhs init, etc.
+        # -- see sma_algorithms.py's enhanced_sma_v2 docstring for details.
+        algo_specs.append(("enhanced_v2", enhanced_sma_v2, {}))
 
     for algo_name, algo_fn, algo_kwargs in algo_specs:
         print(f"\nExtracting features using {algo_name} SMA "
@@ -263,12 +273,11 @@ def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_di
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"\nSaved comparison summary -> {summary_path}")
-    if "standard" in summary and "enhanced" in summary:
-        print("\n=== STANDARD vs ENHANCED (for Chapter 4) ===")
-        print(f"Standard SMA -- accuracy: {summary['standard']['accuracy_mean']:.4f} "
-              f"+/- {summary['standard']['accuracy_std']:.4f}, macro F1: {summary['standard']['macro_f1']:.4f}")
-        print(f"Enhanced SMA -- accuracy: {summary['enhanced']['accuracy_mean']:.4f} "
-              f"+/- {summary['enhanced']['accuracy_std']:.4f}, macro F1: {summary['enhanced']['macro_f1']:.4f}")
+    if summary:
+        print("\n=== SUMMARY (for Chapter 4) ===")
+        for name, s in summary.items():
+            print(f"{name}: accuracy {s['accuracy_mean']:.4f} +/- {s['accuracy_std']:.4f}, "
+                  f"macro F1 {s['macro_f1']:.4f}")
 
 
 if __name__ == "__main__":
@@ -283,7 +292,13 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out_dir", default="./models", help="Where to save trained models + summary")
     parser.add_argument("--adaptive_k", action="store_true",
-                         help="Use diversity-driven adaptive leader count for ESMA (extension beyond literal Algorithm 3.1)")
+                         help="Use diversity-driven adaptive leader count for ESMA v1 (extension beyond literal Algorithm 3.1)")
+    parser.add_argument("--include_v2", action="store_true",
+                         help="Also extract features and train a classifier using enhanced_sma_v2")
+    parser.add_argument("--skip_v1", action="store_true",
+                         help="Skip ESMA v1 entirely -- Standard vs v2 only (v1 already verified "
+                              "separately; use this to keep v2-branch runs focused)")
     args = parser.parse_args()
     run_pipeline(args.json, args.images_dir, args.N, args.T, args.folds, args.max_samples, args.seed,
-                 args.out_dir, use_adaptive_k=args.adaptive_k)
+                 args.out_dir, use_adaptive_k=args.adaptive_k, include_v2=args.include_v2,
+                 skip_v1=args.skip_v1)

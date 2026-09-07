@@ -70,14 +70,15 @@ METRICS = [
 ]
 
 
-def build_algorithms(N, T, d, seed, legacy_fitness, v2_kw, variants):
+def build_algorithms(N, T, d, seed, legacy_fitness, v2_kw, variants, skip_v1=False):
     ff = not legacy_fitness
     common = dict(d=d, N=N, T=T, lb=0, ub=255, seed=seed)
     algos = {
         "standard_sma": lambda prob: standard_sma(prob, fast_fitness=ff, **common),
-        "esma_v1": lambda prob: enhanced_sma(prob, fast_fitness=ff, **common),
         "esma_v2": lambda prob: enhanced_sma_v2(prob, **common, **v2_kw),
     }
+    if not skip_v1:
+        algos["esma_v1"] = lambda prob: enhanced_sma(prob, fast_fitness=ff, **common)
     if "fullT" in variants:
         kw = dict(v2_kw, early_stop=False)
         algos["esma_v2_fullT"] = lambda prob: enhanced_sma_v2(prob, **common, **kw)
@@ -124,7 +125,8 @@ def run(args):
                           dev_n=args.dev_n, max_images=args.max_images)
     variants = [v for v in (args.variants.split(",") if args.variants else []) if v]
     v2_kw = json.loads(args.v2_kw) if args.v2_kw else {}
-    algos = build_algorithms(args.N, args.T, args.d, args.seed, args.legacy_fitness, v2_kw, variants)
+    algos = build_algorithms(args.N, args.T, args.d, args.seed, args.legacy_fitness, v2_kw, variants,
+                              skip_v1=args.skip_v1)
     names = list(algos)
     print(f"Subset '{args.subset}': {len(paths)} images | N={args.N} T={args.T} d={args.d} seed={args.seed}"
           f" | fitness path: {'LEGACY per-agent loop' if args.legacy_fitness else 'shared entropy table'}")
@@ -181,8 +183,6 @@ def run(args):
     # ---------------- per-algorithm summary ----------------
     summary = {}
     print("=== Per-algorithm summary (mean +/- std) ===")
-    hdr = f"{'algorithm':34s} {'Kapur':>16s} {'PSNR':>16s} {'SSIM':>16s} {'runtime ms':>14s} {'iters':>7s} {'gap mean':>9s} {'at opt':>9s}"
-    print(hdr)
     h_stars = np.array([rec["optimum"]["kapur"] for rec in per_image])
     for name in names:
         kap = np.array(col(name, "kapur")); ps = np.array([v for v in col(name, "psnr") if v is not None])
@@ -198,21 +198,31 @@ def run(args):
             "gap_mean": float(gap.mean()), "gap_median": float(np.median(gap)), "gap_max": float(gap.max()),
             "n_at_optimum": at_opt, "pct_at_optimum": float(100 * at_opt / n),
         }
-        print(f"{LABELS[name]:34s} {kap.mean():8.4f}+/-{kap.std():6.4f} {ps.mean():8.4f}+/-{ps.std():6.4f} "
-              f"{ss.mean():8.4f}+/-{ss.std():6.4f} {rt.mean():7.1f}+/-{rt.std():5.1f} {it.mean():7.1f} "
-              f"{gap.mean():9.4f} {at_opt:4d}/{n:<4d}")
+        print(f"{LABELS[name]}")
+        print(f"  Kapur:    {kap.mean():.4f} +/- {kap.std():.4f}")
+        print(f"  PSNR:     {ps.mean():.4f} +/- {ps.std():.4f}")
+        print(f"  SSIM:     {ss.mean():.4f} +/- {ss.std():.4f}")
+        print(f"  Runtime:  {rt.mean():.1f}ms +/- {rt.std():.1f}ms")
+        print(f"  Iters:    {it.mean():.1f}")
+        print(f"  Gap mean: {gap.mean():.4f}")
+        print(f"  At optimum: {at_opt}/{n}")
+        print()
     ps_star = np.array([rec["optimum"]["psnr"] for rec in per_image if rec["optimum"]["psnr"] is not None])
     ss_star = np.array([rec["optimum"]["ssim"] for rec in per_image])
     summary["exact_optimum"] = {
         "kapur_mean": float(h_stars.mean()), "psnr_mean": float(ps_star.mean()) if ps_star.size else None,
         "ssim_mean": float(ss_star.mean()),
     }
-    print(f"{'Exact Kapur optimum (DP reference)':34s} {h_stars.mean():8.4f}           "
-          f"{ps_star.mean():8.4f}           {ss_star.mean():8.4f}")
+    print("Exact Kapur optimum (DP reference)")
+    print(f"  Kapur: {h_stars.mean():.4f}")
+    print(f"  PSNR:  {ps_star.mean():.4f}")
+    print(f"  SSIM:  {ss_star.mean():.4f}")
     print()
 
     # ---------------- pairwise comparisons ----------------
-    pairs = [("standard_sma", "esma_v1"), ("standard_sma", "esma_v2"), ("esma_v1", "esma_v2")]
+    pairs = [("standard_sma", "esma_v2")]
+    if not args.skip_v1:
+        pairs = [("standard_sma", "esma_v1"), ("standard_sma", "esma_v2"), ("esma_v1", "esma_v2")]
     for v in ("esma_v2_fullT", "esma_v2_polish"):
         if v in algos:
             pairs.append(("esma_v2", v))
@@ -220,17 +230,20 @@ def run(args):
     for a, b in pairs:
         key = f"{a}__vs__{b}"
         pairwise[key] = {}
-        print(f"=== {LABELS[b]}  vs  {LABELS[a]} ===")
+        print(f"=== {LABELS[b]} vs {LABELS[a]} ===")
         for mkey, mlabel, lower in METRICS:
             st = paired_stats(col(a, mkey), col(b, mkey), lower_is_better=lower)
             pairwise[key][mkey] = st
             if st is None:
                 continue
-            print(f"  {mlabel} ({'lower' if lower else 'higher'} is better): "
-                  f"{LABELS[a]} {st['a_mean']:.4f} -> {LABELS[b]} {st['b_mean']:.4f} | "
-                  f"gain {st['mean_gain']:+.4f} (std {st['gain_std']:.4f}) | "
-                  f"{LABELS[b]} better in {st['n_b_better']}/{st['n']} ({st['pct_b_better']:.1f}%), ties {st['n_ties']} | "
-                  f"Wilcoxon p = {fmt_p(st['wilcoxon_p_value'])}")
+            direction = "lower is better" if lower else "higher is better"
+            print(f"  {mlabel} ({direction})")
+            print(f"    {LABELS[a]}: {st['a_mean']:.4f}")
+            print(f"    {LABELS[b]}: {st['b_mean']:.4f}")
+            print(f"    gain: {st['mean_gain']:+.4f} (std {st['gain_std']:.4f})")
+            print(f"    {LABELS[b]} better: {st['n_b_better']}/{st['n']} ({st['pct_b_better']:.1f}%), ties {st['n_ties']}")
+            print(f"    Wilcoxon p: {fmt_p(st['wilcoxon_p_value'])}")
+            print()
         print()
 
     out = {
@@ -264,6 +277,9 @@ if __name__ == "__main__":
     parser.add_argument("--variants", default="fullT,polish",
                         help="comma list of extra ESMA v2 rows: fullT, polish (empty string for none)")
     parser.add_argument("--v2_kw", default=None, help="JSON dict of enhanced_sma_v2 keyword overrides")
+    parser.add_argument("--skip_v1", action="store_true",
+                        help="Exclude ESMA v1 from the run entirely -- Standard SMA vs ESMA v2 only "
+                             "(v1 was already verified separately; use this to keep v2-branch runs focused)")
     parser.add_argument("--legacy_fitness", action="store_true",
                         help="run Standard SMA / ESMA v1 through the original per-agent fitness loop")
     parser.add_argument("--out", default="./three_way_comparison.json")
