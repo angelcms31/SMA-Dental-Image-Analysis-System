@@ -36,9 +36,6 @@ const QUADRANT_LABELS: Record<string, string> = {
   Q4: 'Lower Left',
 };
 
-// Colored by DIAGNOSIS TYPE (not quadrant) so a finding's category is
-// identifiable at a glance -- kept consistent with the backend's box
-// colors (predict_yolo.py / overlay.py DIAGNOSIS_COLORS).
 const DIAGNOSIS_ACCENT: Record<string, string> = {
   Caries: '#E8A33D',
   'Deep Caries': '#E8604C',
@@ -56,7 +53,7 @@ const DIAGNOSIS_INFO: Record<string, string> = {
 
 const TAB_META: Record<AlgoTab, { label: string; short: string; accent: string }> = {
   standard: { label: 'Standard SMA', short: 'Standard', accent: '#1B6E8C' },
-  enhanced: { label: 'Enhanced SMA (ESMA)', short: 'Enhanced', accent: '#E8A33D' },
+  enhanced: { label: 'Enhanced SMA (ESMA v2)', short: 'Enhanced', accent: '#E8A33D' },
 };
 
 export default function OpgAnalyzer() {
@@ -99,22 +96,20 @@ export default function OpgAnalyzer() {
         ? 'http://localhost:8000/analyze/standard/'
         : 'http://localhost:8000/analyze/enhanced/';
 
-    // The trained YOLO detector (clean per-tooth boxes) uses SEPARATE
-    // weights from the core SMA/ESMA comparison -- one model per
-    // preprocessing algorithm. We call both endpoints and merge:
-    // real entropy/PSNR/SSIM/runtime numbers from the SMA/ESMA endpoint,
-    // but the clean trained-detector overlay for the visual.
+    // "enhanced" now points at the ESMA v2 + Mendeley YOLO model
+    // (runs_yolo/train_v2_mendeley) -- NOT runs_yolo/train_enhanced_v2,
+    // which was ESMA v1 + Mendeley from before the v2 branch existed.
     const yoloFormData = new FormData();
     yoloFormData.append('file', selectedFile);
     yoloFormData.append('conf', '0.25');
     yoloFormData.append('iou', '0.35');
     yoloFormData.append('use_esma', 'true');
-    yoloFormData.append('sma_algorithm', algo);
+    yoloFormData.append('sma_algorithm', algo === 'standard' ? 'standard' : 'enhanced_v2');
     yoloFormData.append(
       'weights_path',
       algo === 'standard'
         ? 'runs_yolo/train_standard_v2/weights/best.pt'
-        : 'runs_yolo/train_enhanced_v2/weights/best.pt'
+        : 'runs_yolo/train_v2_mendeley/weights/best.pt'
     );
 
     try {
@@ -129,9 +124,6 @@ export default function OpgAnalyzer() {
 
       const merged: AnalyzeResult = {
         ...metricsRes.data,
-        // prefer the YOLO detector's cleaner overlay + findings for display,
-        // but fall back to the SMA/ESMA endpoint's own overlay if the YOLO
-        // call failed for some reason (e.g. weights not found yet)
         annotated_image: yoloRes.data.status === 'success' ? yoloRes.data.annotated_image : metricsRes.data.annotated_image,
         detected_regions: yoloRes.data.status === 'success' ? yoloRes.data.detected_regions : metricsRes.data.detected_regions,
       };
@@ -148,7 +140,6 @@ export default function OpgAnalyzer() {
 
   return (
     <div className="min-h-screen bg-[#F5F6F8] font-['Inter',sans-serif] pb-16">
-      {/* Header */}
       <div
         className="w-full px-6 py-10 md:py-14"
         style={{ background: 'linear-gradient(135deg, #14324A 0%, #1B6E8C 55%, #1E8C82 100%)' }}
@@ -166,7 +157,6 @@ export default function OpgAnalyzer() {
       </div>
 
       <div className="max-w-5xl mx-auto px-6 -mt-6">
-        {/* Upload card -- compact single-row layout */}
         <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 mb-6">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-3">
@@ -210,15 +200,12 @@ export default function OpgAnalyzer() {
           </div>
         </div>
 
-        {/* Non-clinical disclaimer */}
         {currentResult?.status === 'success' && currentResult.disclaimer && (
           <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-xl px-4 py-3">
             <strong>⚠ Not a medical diagnosis.</strong> {currentResult.disclaimer}
           </div>
         )}
 
-        {/* Two-column canvas: Original + Findings stacked on the left,
-            Results spanning the full height on the right */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 items-stretch">
           <div className="flex flex-col gap-4">
             <div className="rounded-2xl overflow-hidden bg-[#14181F]">
@@ -289,9 +276,6 @@ export default function OpgAnalyzer() {
             </div>
           </div>
 
-          {/* Results panel -- toggles between Metrics and Findings-list views,
-              similar to a preview/code style switch. Spans the full height
-              of the left column via items-stretch on the parent grid. */}
           <div className="rounded-2xl overflow-hidden bg-[#14181F] flex flex-col">
             <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
               <span className="text-white/50 text-xs font-medium tracking-wide">RESULTS</span>
@@ -359,7 +343,6 @@ export default function OpgAnalyzer() {
           </div>
         </div>
 
-        {/* Fullscreen image modal -- click Original or Findings to expand */}
         {fullscreenImage && (
           <div
             onClick={() => setFullscreenImage(null)}
@@ -381,9 +364,6 @@ export default function OpgAnalyzer() {
           </div>
         )}
 
-        {/* Legend / quick guide -- explains the diagnosis color coding and
-            how to read the panels, so first-time viewers (panel, dentist,
-            defense audience) don't have to ask */}
         <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 mb-6">
           <h3 className="text-xs font-semibold text-slate-500 tracking-wide mb-3">HOW TO READ THIS</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-4">
@@ -426,7 +406,6 @@ export default function OpgAnalyzer() {
           </div>
         </div>
 
-        {/* Side-by-side comparison once both have been run */}
         {bothDone && (
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 md:p-6">
             <h3 className="text-sm font-semibold text-slate-800 mb-4">Standard vs Enhanced</h3>
@@ -470,7 +449,6 @@ function ResultStat({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
 
 function ComparisonBar({
   label,
