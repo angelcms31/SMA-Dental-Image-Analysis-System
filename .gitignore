@@ -24,16 +24,15 @@ yolo_dataset_enhanced_v*/
 yolo_dataset/
 yolo_esma_test/
 mendeley_label_check/
+yolo_dataset_v2/
 
 # ===== Trained models / weights (large binary files) =====
 models/
 runs/
-runs_yolo/*
-!runs_yolo/**/best.pt*.pt
+runs_yolo/
 *.pth
 *.joblib
 *.onnx
-yolo_dataset_v2/
 
 # ===== Generated result files (regenerate by re-running scripts) =====
 full_image_comparison.json
@@ -57,3 +56,8 @@ Thumbs.db
 
 # ===== Logs =====
 *.log
+
+
+backend/yolov8n.pt
+frontend/.deps_installed
+backend/.deps_installed
