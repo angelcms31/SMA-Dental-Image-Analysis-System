@@ -28,8 +28,8 @@ mendeley_label_check/
 # ===== Trained models / weights (large binary files) =====
 models/
 runs/
-runs_yolo/
-*.pt
+runs_yolo/*
+!runs_yolo/**/best.pt*.pt
 *.pth
 *.joblib
 *.onnx
