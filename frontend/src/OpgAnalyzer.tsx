@@ -36,13 +36,14 @@ const QUADRANT_LABELS: Record<string, string> = {
   Q4: 'Lower Left',
 };
 
+// Palette: Harvest Gold / Calico / Hampton / Sea Nymph / Smalt Blue
 const DIAGNOSIS_ACCENT: Record<string, string> = {
-  Caries: '#E8A33D',
-  'Deep Caries': '#E8604C',
-  Impacted: '#8B5FBF',
-  'Periapical Lesion': '#4C8FE8',
+  Caries: '#E1A36F',
+  'Deep Caries': '#B8541F',
+  Impacted: '#6F9F9C',
+  'Periapical Lesion': '#577E89',
 };
-const DIAGNOSIS_DEFAULT_ACCENT = '#94A3B8';
+const DIAGNOSIS_DEFAULT_ACCENT = '#B0A480';
 
 const DIAGNOSIS_INFO: Record<string, string> = {
   Caries: 'Tooth decay (cavity) affecting the enamel or dentin.',
@@ -52,8 +53,8 @@ const DIAGNOSIS_INFO: Record<string, string> = {
 };
 
 const TAB_META: Record<AlgoTab, { label: string; short: string; accent: string }> = {
-  standard: { label: 'Standard SMA', short: 'Standard', accent: '#1B6E8C' },
-  enhanced: { label: 'Enhanced SMA (ESMA v2)', short: 'Enhanced', accent: '#E8A33D' },
+  standard: { label: 'Standard SMA', short: 'Standard', accent: '#577E89' },
+  enhanced: { label: 'Enhanced SMA', short: 'Enhanced', accent: '#E1A36F' },
 };
 
 export default function OpgAnalyzer() {
@@ -61,7 +62,7 @@ export default function OpgAnalyzer() {
   const [originalPreview, setOriginalPreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<AlgoTab>('standard');
-  const [resultsView, setResultsView] = useState<'metrics' | 'findings'>('metrics');
+  const [resultsView, setResultsView] = useState<'findings' | 'metrics'>('findings');
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   const [results, setResults] = useState<Record<AlgoTab, AnalyzeResult | null>>({
@@ -71,6 +72,7 @@ export default function OpgAnalyzer() {
 
   const currentResult = results[activeTab];
   const meta = TAB_META[activeTab];
+  const bothDone = results.standard?.status === 'success' && results.enhanced?.status === 'success';
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -81,12 +83,12 @@ export default function OpgAnalyzer() {
     }
   };
 
-  const handleAnalyze = async (algo: AlgoTab) => {
-    if (!selectedFile) return;
-    setIsProcessing(true);
-
+  // Runs one algorithm end-to-end (core metrics + YOLO detector, merged).
+  // Returns the result rather than setting state, so handleRunBoth can
+  // await both algorithms in parallel from a single button.
+  const runAlgorithm = async (algo: AlgoTab, file: File): Promise<AnalyzeResult> => {
     const formData = new FormData();
-    formData.append('file', selectedFile);
+    formData.append('file', file);
     formData.append('d', '4');
     formData.append('N', '30');
     formData.append('T', '100');
@@ -96,11 +98,8 @@ export default function OpgAnalyzer() {
         ? 'http://localhost:8000/analyze/standard/'
         : 'http://localhost:8000/analyze/enhanced/';
 
-    // "enhanced" now points at the ESMA v2 + Mendeley YOLO model
-    // (runs_yolo/train_v2_mendeley) -- NOT runs_yolo/train_enhanced_v2,
-    // which was ESMA v1 + Mendeley from before the v2 branch existed.
     const yoloFormData = new FormData();
-    yoloFormData.append('file', selectedFile);
+    yoloFormData.append('file', file);
     yoloFormData.append('conf', '0.25');
     yoloFormData.append('iou', '0.35');
     yoloFormData.append('use_esma', 'true');
@@ -112,22 +111,30 @@ export default function OpgAnalyzer() {
         : 'runs_yolo/train_v2_mendeley/weights/best.pt'
     );
 
-    try {
-      const [metricsRes, yoloRes] = await Promise.all([
-        axios.post<AnalyzeResult>(endpoint, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        }),
-        axios.post<AnalyzeResult>('http://localhost:8000/analyze/detect-teeth/', yoloFormData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        }),
-      ]);
+    const [metricsRes, yoloRes] = await Promise.all([
+      axios.post<AnalyzeResult>(endpoint, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+      axios.post<AnalyzeResult>('http://localhost:8000/analyze/detect-teeth/', yoloFormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+    ]);
 
-      const merged: AnalyzeResult = {
-        ...metricsRes.data,
-        annotated_image: yoloRes.data.status === 'success' ? yoloRes.data.annotated_image : metricsRes.data.annotated_image,
-        detected_regions: yoloRes.data.status === 'success' ? yoloRes.data.detected_regions : metricsRes.data.detected_regions,
-      };
-      setResults((prev) => ({ ...prev, [algo]: merged }));
+    return {
+      ...metricsRes.data,
+      annotated_image: yoloRes.data.status === 'success' ? yoloRes.data.annotated_image : metricsRes.data.annotated_image,
+      detected_regions: yoloRes.data.status === 'success' ? yoloRes.data.detected_regions : metricsRes.data.detected_regions,
+    };
+  };
+
+  // Runs a single algorithm and switches display to it immediately.
+  const handleRunSingle = async (algo: AlgoTab) => {
+    if (!selectedFile) return;
+    setIsProcessing(true);
+    setActiveTab(algo);
+    try {
+      const result = await runAlgorithm(algo, selectedFile);
+      setResults((prev) => ({ ...prev, [algo]: result }));
     } catch (error) {
       console.error('Error analyzing image:', error);
       alert('May error sa pag-connect sa backend. Siguraduhing tumatakbo ang FastAPI server.');
@@ -136,83 +143,120 @@ export default function OpgAnalyzer() {
     }
   };
 
-  const bothDone = results.standard?.status === 'success' && results.enhanced?.status === 'success';
+  // Runs Standard and Enhanced together. The tab switcher below then
+  // changes which already-computed result is shown.
+  const handleRunBoth = async () => {
+    if (!selectedFile) return;
+    setIsProcessing(true);
+    try {
+      const [standard, enhanced] = await Promise.all([
+        runAlgorithm('standard', selectedFile),
+        runAlgorithm('enhanced', selectedFile),
+      ]);
+      setResults({ standard, enhanced });
+    } catch (error) {
+      console.error('Error analyzing image:', error);
+      alert('May error sa pag-connect sa backend. Siguraduhing tumatakbo ang FastAPI server.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const anyDone = results.standard?.status === 'success' || results.enhanced?.status === 'success';
 
   return (
     <div className="min-h-screen bg-[#F5F6F8] font-['Inter',sans-serif] pb-16">
+      {/* Header -- compact, single row */}
       <div
-        className="w-full px-6 py-10 md:py-14"
-        style={{ background: 'linear-gradient(135deg, #14324A 0%, #1B6E8C 55%, #1E8C82 100%)' }}
+        className="w-full px-6 py-4"
+        style={{ background: 'linear-gradient(135deg, #3A5661 0%, #577E89 55%, #6F9F9C 100%)' }}
       >
-        <div className="max-w-5xl mx-auto">
-          <p className="text-white/60 text-xs font-medium tracking-wide mb-2">DENTAL OPG SEGMENTATION</p>
-          <h1 className="text-3xl md:text-[2.15rem] font-semibold text-white font-['Space_Grotesk',sans-serif] leading-tight">
-            Standard vs Enhanced Slime Mould Algorithm
-          </h1>
-          <p className="text-white/70 mt-2 text-sm md:text-base max-w-xl">
-            Upload a panoramic X-ray to compare threshold segmentation quality between
-            the original and proposed algorithms.
-          </p>
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-lg font-semibold text-white font-['Space_Grotesk',sans-serif] leading-tight">
+              Standard vs Enhanced Slime Mould Algorithm
+            </h1>
+            <p className="text-white/60 text-xs mt-0.5">Dental OPG segmentation comparison</p>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 -mt-6">
+      <div className="max-w-6xl mx-auto px-6 mt-6">
+        {/* Upload card -- file picker + three run buttons (Standard /
+            Enhanced / Both). Each single-algorithm button also switches
+            the active tab to that algorithm; results differ per tab
+            since each holds its own computed result. */}
         <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 mb-6">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-3">
-              <input
-                type="file"
-                accept="image/png, image/jpeg"
-                onChange={handleFileChange}
-                className="text-sm text-slate-500
-                           file:mr-3 file:py-2 file:px-4
-                           file:rounded-full file:border-0
-                           file:text-sm file:font-medium
-                           file:bg-[#1B6E8C] file:text-white
-                           hover:file:bg-[#155A73] cursor-pointer transition-colors"
-              />
-            </div>
-
-            <div className="inline-flex bg-slate-100 rounded-full p-1 gap-1 shrink-0">
-              {(Object.keys(TAB_META) as AlgoTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
-                    activeTab === tab ? 'text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                  style={activeTab === tab ? { backgroundColor: TAB_META[tab].accent } : undefined}
-                >
-                  {TAB_META[tab].short}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="file"
+              accept="image/png, image/jpeg"
+              onChange={handleFileChange}
+              className="text-sm text-slate-500
+                         file:mr-3 file:py-2 file:px-4
+                         file:rounded-full file:border-0
+                         file:text-sm file:font-medium
+                         file:bg-[#577E89] file:text-white
+                         hover:file:bg-[#3A5661] cursor-pointer transition-colors"
+            />
 
             <button
-              onClick={() => handleAnalyze(activeTab)}
+              onClick={() => handleRunSingle('standard')}
               disabled={!selectedFile || isProcessing}
-              className="text-white px-6 py-2 rounded-full font-medium text-sm
+              className="text-white px-5 py-2 rounded-full font-medium text-sm
                          disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-              style={{ backgroundColor: meta.accent }}
+              style={{ backgroundColor: TAB_META.standard.accent }}
             >
-              {isProcessing ? `Running…` : `Run ${meta.label}`}
+              Standard
             </button>
+            <button
+              onClick={() => handleRunSingle('enhanced')}
+              disabled={!selectedFile || isProcessing}
+              className="text-white px-5 py-2 rounded-full font-medium text-sm
+                         disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+              style={{ backgroundColor: TAB_META.enhanced.accent }}
+            >
+              ESMA
+            </button>
+            <button
+              onClick={handleRunBoth}
+              disabled={!selectedFile || isProcessing}
+              className="text-white px-5 py-2 rounded-full font-medium text-sm
+                         disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+              style={{ backgroundColor: '#3A5661' }}
+            >
+              Both
+            </button>
+
+            {isProcessing && <span className="text-xs text-slate-400">Running…</span>}
+
+            {anyDone && (
+              <div className="inline-flex bg-slate-100 rounded-full p-1 gap-1 shrink-0 ml-auto">
+                {(Object.keys(TAB_META) as AlgoTab[]).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+                      activeTab === tab ? 'text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                    style={activeTab === tab ? { backgroundColor: TAB_META[tab].accent } : undefined}
+                  >
+                    {TAB_META[tab].short}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        {currentResult?.status === 'success' && currentResult.disclaimer && (
-          <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-xl px-4 py-3">
-            <strong>⚠ Not a medical diagnosis.</strong> {currentResult.disclaimer}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 items-stretch">
-          <div className="flex flex-col gap-4">
-            <div className="rounded-2xl overflow-hidden bg-[#14181F]">
-              <div className="px-4 py-3 border-b border-white/10">
-                <span className="text-white/50 text-xs font-medium tracking-wide">ORIGINAL</span>
-              </div>
-              <div className="aspect-[2/1] flex items-center justify-center p-2 relative group">
+        {/* Two-column canvas: Original | Findings, wide aspect ratio
+            matching panoramic X-rays for a bigger, clearer image */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="rounded-2xl overflow-hidden bg-[#14181F]">
+            <div className="px-4 py-3 border-b border-white/10">
+              <span className="text-white/50 text-xs font-medium tracking-wide">ORIGINAL</span>
+            </div>
+            <div className="aspect-[2/1] flex items-center justify-center p-2 relative group">
                 {originalPreview ? (
                   <button
                     onClick={() => setFullscreenImage(originalPreview)}
@@ -232,17 +276,17 @@ export default function OpgAnalyzer() {
                 ) : (
                   <span className="text-white/30 text-sm">No image uploaded</span>
                 )}
-              </div>
             </div>
+          </div>
 
-            <div className="rounded-2xl overflow-hidden bg-[#14181F]">
-              <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-                <span className="text-white/50 text-xs font-medium tracking-wide">
-                  FINDINGS — {meta.short.toUpperCase()}
-                </span>
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: meta.accent }} />
-              </div>
-              <div className="aspect-[2/1] flex items-center justify-center p-2 relative group">
+          <div className="rounded-2xl overflow-hidden bg-[#14181F]">
+            <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+              <span className="text-white/50 text-xs font-medium tracking-wide">
+                FINDINGS — {meta.short.toUpperCase()}
+              </span>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: meta.accent }} />
+            </div>
+            <div className="aspect-[2/1] flex items-center justify-center p-2 relative group">
                 {isProcessing ? (
                   <div className="flex flex-col items-center">
                     <div
@@ -272,77 +316,79 @@ export default function OpgAnalyzer() {
                 ) : (
                   <span className="text-white/30 text-sm">Awaiting analysis</span>
                 )}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl overflow-hidden bg-[#14181F] flex flex-col">
-            <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
-              <span className="text-white/50 text-xs font-medium tracking-wide">RESULTS</span>
-              <div className="inline-flex bg-white/5 rounded-full p-0.5 gap-0.5">
-                <button
-                  onClick={() => setResultsView('metrics')}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-                    resultsView === 'metrics' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  Metrics
-                </button>
-                <button
-                  onClick={() => setResultsView('findings')}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-                    resultsView === 'findings' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  Findings
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4">
-              {currentResult?.status !== 'success' ? (
-                <div className="h-full flex items-center justify-center">
-                  <span className="text-white/30 text-sm">Awaiting analysis</span>
-                </div>
-              ) : resultsView === 'metrics' ? (
-                <div className="space-y-3">
-                  <ResultStat label="Thresholds" value={currentResult.thresholds?.join(', ') ?? '-'} />
-                  <ResultStat label="Kapur's Entropy" value={currentResult.kapur_entropy_fitness?.toFixed(4) ?? '-'} />
-                  <ResultStat label="PSNR" value={currentResult.psnr != null ? currentResult.psnr.toFixed(4) : '∞'} />
-                  <ResultStat label="SSIM" value={currentResult.ssim?.toFixed(6) ?? '-'} />
-                  <ResultStat label="Runtime (s)" value={currentResult.runtime_sec?.toFixed(4) ?? '-'} />
-                </div>
-              ) : !currentResult.detected_regions || currentResult.detected_regions.length === 0 ? (
-                <p className="text-sm text-white/40">No regions were flagged in this image.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {currentResult.detected_regions.map((region, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2.5 bg-white/[0.04] rounded-md px-2.5 py-1.5 border-l-[3px]"
-                      style={{ borderLeftColor: DIAGNOSIS_ACCENT[region.label] ?? DIAGNOSIS_DEFAULT_ACCENT }}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-white/90 truncate">
-                          {region.label}
-                          {region.confidence != null && (
-                            <span className="ml-1.5 font-normal text-white/40">
-                              {Math.round(region.confidence * 100)}%
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-[11px] text-white/40">
-                          {QUADRANT_LABELS[region.quadrant]} · {region.area_px}px
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>
 
+        {/* Results panel -- full width below the images, Findings shown
+            first by default, laid out as a grid instead of a long list */}
+        <div className="rounded-2xl overflow-hidden bg-[#14181F] mb-6">
+          <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+            <span className="text-white/50 text-xs font-medium tracking-wide">RESULTS</span>
+            <div className="inline-flex bg-white/5 rounded-full p-0.5 gap-0.5">
+              <button
+                onClick={() => setResultsView('findings')}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                  resultsView === 'findings' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                Findings
+              </button>
+              <button
+                onClick={() => setResultsView('metrics')}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                  resultsView === 'metrics' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                Metrics
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4">
+            {currentResult?.status !== 'success' ? (
+              <div className="py-8 flex items-center justify-center">
+                <span className="text-white/30 text-sm">Awaiting analysis</span>
+              </div>
+            ) : resultsView === 'metrics' ? (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <ResultStat label="Thresholds" value={currentResult.thresholds?.join(', ') ?? '-'} />
+                <ResultStat label="Kapur's Entropy" value={currentResult.kapur_entropy_fitness?.toFixed(4) ?? '-'} />
+                <ResultStat label="PSNR" value={currentResult.psnr != null ? currentResult.psnr.toFixed(4) : '∞'} />
+                <ResultStat label="SSIM" value={currentResult.ssim?.toFixed(6) ?? '-'} />
+                <ResultStat label="Runtime (s)" value={currentResult.runtime_sec?.toFixed(4) ?? '-'} />
+              </div>
+            ) : !currentResult.detected_regions || currentResult.detected_regions.length === 0 ? (
+              <p className="text-sm text-white/40">No regions were flagged in this image.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {currentResult.detected_regions.map((region, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2.5 bg-white/[0.04] rounded-md px-2.5 py-1.5 border-l-[3px]"
+                    style={{ borderLeftColor: DIAGNOSIS_ACCENT[region.label] ?? DIAGNOSIS_DEFAULT_ACCENT }}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-white/90 truncate">
+                        {region.label}
+                        {region.confidence != null && (
+                          <span className="ml-1.5 font-normal text-white/40">
+                            {Math.round(region.confidence * 100)}%
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-white/40">
+                        {QUADRANT_LABELS[region.quadrant]} · {region.area_px}px
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Fullscreen image modal */}
         {fullscreenImage && (
           <div
             onClick={() => setFullscreenImage(null)}
@@ -364,50 +410,9 @@ export default function OpgAnalyzer() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 mb-6">
-          <h3 className="text-xs font-semibold text-slate-500 tracking-wide mb-3">HOW TO READ THIS</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-4">
-            <div>
-              <p className="text-xs font-medium text-slate-600 mb-2">Diagnosis colors</p>
-              <div className="space-y-1.5">
-                {(Object.keys(DIAGNOSIS_ACCENT) as Array<keyof typeof DIAGNOSIS_ACCENT>).map((d) => (
-                  <div key={d} className="flex items-start gap-1.5 text-xs">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full mt-0.5 shrink-0"
-                      style={{ backgroundColor: DIAGNOSIS_ACCENT[d] }}
-                    />
-                    <span>
-                      <span className="text-slate-700 font-medium">{d}</span>
-                      <span className="text-slate-400"> — {DIAGNOSIS_INFO[d]}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-600 mb-2">Confidence %</p>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                How certain the trained detection model is about that specific finding —
-                not a measure of clinical certainty. Values are typically modest (25–45%)
-                since this is an exploratory, non-validated feature. The region's quadrant
-                (e.g. Upper Left) is shown as text under each finding.
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-600 mb-2">Panels &amp; tabs</p>
-              <ul className="text-xs text-slate-500 space-y-1 leading-relaxed">
-                <li><strong className="text-slate-700">Original</strong> — the uploaded X-ray, unmodified.</li>
-                <li><strong className="text-slate-700">Findings</strong> — segmentation output with flagged regions.</li>
-                <li><strong className="text-slate-700">Results → Metrics</strong> — entropy, PSNR, SSIM, runtime.</li>
-                <li><strong className="text-slate-700">Results → Findings</strong> — list of flagged regions.</li>
-                <li><strong className="text-slate-700">Standard / Enhanced</strong> — which SMA variant produced the thresholds.</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
+        {/* Side-by-side comparison once both have been run */}
         {bothDone && (
-          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 md:p-6">
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 md:p-6 mb-6">
             <h3 className="text-sm font-semibold text-slate-800 mb-4">Standard vs Enhanced</h3>
             <div className="space-y-4">
               <ComparisonBar
@@ -436,6 +441,55 @@ export default function OpgAnalyzer() {
             </div>
           </div>
         )}
+
+        {/* Legend -- includes the permanent, always-visible disclaimer at the bottom */}
+        <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 mb-6">
+          <h3 className="text-xs font-semibold text-slate-500 tracking-wide mb-3">HOW TO READ THIS</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-4">
+            <div>
+              <p className="text-xs font-medium text-slate-600 mb-2">Diagnosis colors</p>
+              <div className="space-y-1.5">
+                {(Object.keys(DIAGNOSIS_ACCENT) as Array<keyof typeof DIAGNOSIS_ACCENT>).map((d) => (
+                  <div key={d} className="flex items-start gap-1.5 text-xs">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full mt-0.5 shrink-0"
+                      style={{ backgroundColor: DIAGNOSIS_ACCENT[d] }}
+                    />
+                    <span>
+                      <span className="text-slate-700 font-medium">{d}</span>
+                      <span className="text-slate-400"> — {DIAGNOSIS_INFO[d]}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-600 mb-2">Confidence %</p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                How certain the trained detection model is about that specific finding —
+                not a measure of clinical certainty. Values are typically modest (25–45%)
+                since this is an exploratory, non-validated feature.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-600 mb-2">Panels &amp; tabs</p>
+              <ul className="text-xs text-slate-500 space-y-1 leading-relaxed">
+                <li><strong className="text-slate-700">Original</strong> — the uploaded X-ray, unmodified.</li>
+                <li><strong className="text-slate-700">Findings</strong> — segmentation output with flagged regions.</li>
+                <li><strong className="text-slate-700">Results → Findings</strong> — list of flagged regions.</li>
+                <li><strong className="text-slate-700">Results → Metrics</strong> — entropy, PSNR, SSIM, runtime.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-xl px-4 py-3 mt-5">
+            <strong>⚠ Not a medical diagnosis.</strong> Research prototype for academic demonstration only.
+            This output is NOT a clinical diagnosis. Findings are generated by a trained detection model
+            and threshold-based segmentation, not a validated diagnostic tool. Please consult a licensed
+            dentist for any actual diagnosis or treatment.
+          </div>
+        </div>
+
       </div>
     </div>
   );
