@@ -119,9 +119,6 @@ def run_yolo_detection(image_bgr, weights_path, conf_thresh=0.25, iou_thresh=0.3
             "quadrant": quadrant,
             "label": label,
             "bbox": [x, y, bw, bh],
-            # bbox area -- the YOLO equivalent of overlay.py's contour area_px,
-            # so the frontend's findings list can show a real size instead of "px"
-            "area_px": bw * bh,
             "confidence": round(confidence, 4),
         })
 
