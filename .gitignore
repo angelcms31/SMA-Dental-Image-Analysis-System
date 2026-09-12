@@ -61,3 +61,6 @@ Thumbs.db
 backend/yolov8n.pt
 frontend/.deps_installed
 backend/.deps_installed
+# ===== Generated result documents (large; regenerate from screenshots) =====
+Standard_vs_Enhanced_SMA_Results_*.docx
+Standard_vs_Enhanced_SMA_Results_*.pdf
