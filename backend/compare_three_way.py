@@ -32,6 +32,15 @@ Extra ESMA v2 rows:   --variants fullT,polish
 Reproduction mode:    --legacy_fitness
     runs Standard SMA and ESMA v1 through the original per-agent fitness loop
     (byte-for-byte legacy code path; ~9x slower).
+Evaluation protocol:  --recon even|mean
+    band repaint used for PSNR/SSIM. 'even' (default) = the original fixed
+    levels 0, 64, 128, 191, 255; 'mean' = every band painted with its own mean
+    intensity (minimum-MSE repaint; the convention of the multilevel-
+    thresholding literature). Thresholds and fitness are unaffected.
+Objective:            --objective kapur|otsu|hybrid
+    fitness criterion for ALL algorithms and for the exact DP reference.
+    'kapur' entries in the JSON are always Kapur's entropy of the thresholds;
+    'objective_value' is the optimized criterion.
 """
 
 import argparse
@@ -50,6 +59,7 @@ from sma_algorithms import (
     enhanced_sma,
     enhanced_sma_v2,
     kapur_optimal_thresholds,
+    make_objective_table,
     standard_sma,
 )
 
@@ -70,9 +80,9 @@ METRICS = [
 ]
 
 
-def build_algorithms(N, T, d, seed, legacy_fitness, v2_kw, variants, skip_v1=False):
+def build_algorithms(N, T, d, seed, legacy_fitness, v2_kw, variants, skip_v1=False, objective="kapur"):
     ff = not legacy_fitness
-    common = dict(d=d, N=N, T=T, lb=0, ub=255, seed=seed)
+    common = dict(d=d, N=N, T=T, lb=0, ub=255, seed=seed, objective=objective)
     algos = {
         "standard_sma": lambda prob: standard_sma(prob, fast_fitness=ff, **common),
         "esma_v2": lambda prob: enhanced_sma_v2(prob, **common, **v2_kw),
@@ -126,10 +136,11 @@ def run(args):
     variants = [v for v in (args.variants.split(",") if args.variants else []) if v]
     v2_kw = json.loads(args.v2_kw) if args.v2_kw else {}
     algos = build_algorithms(args.N, args.T, args.d, args.seed, args.legacy_fitness, v2_kw, variants,
-                              skip_v1=args.skip_v1)
+                              skip_v1=args.skip_v1, objective=args.objective)
     names = list(algos)
     print(f"Subset '{args.subset}': {len(paths)} images | N={args.N} T={args.T} d={args.d} seed={args.seed}"
-          f" | fitness path: {'LEGACY per-agent loop' if args.legacy_fitness else 'shared entropy table'}")
+          f" | fitness path: {'LEGACY per-agent loop' if args.legacy_fitness else 'shared entropy table'}"
+          f" | objective: {args.objective} | PSNR/SSIM repaint: {args.recon}")
     if v2_kw:
         print(f"ESMA v2 overrides: {v2_kw}")
 
@@ -143,15 +154,17 @@ def run(args):
             print(f"  [skip] could not read '{os.path.basename(path)}'")
             continue
 
-        table = KapurEntropyTable(prob)
-        h_star, thr_star = kapur_optimal_thresholds(prob, args.d, table=table)
-        seg_star = apply_thresholds(image, thr_star)
+        ktable = KapurEntropyTable(prob)
+        table = ktable if args.objective == "kapur" else make_objective_table(prob, args.objective, args.d)
+        h_star, thr_star = kapur_optimal_thresholds(prob, args.d, table=table)   # exact optimum of the chosen objective
+        seg_star = apply_thresholds(image, thr_star, args.recon)
         psnr_star = compute_psnr(image, seg_star)
         rec = {
             "file": os.path.basename(path),
             "shape": list(image.shape),
             "optimum": {
-                "kapur": h_star, "thresholds": [int(t) for t in thr_star],
+                "objective_value": h_star,
+                "kapur": float(ktable.evaluate_one(thr_star)), "thresholds": [int(t) for t in thr_star],
                 "psnr": None if psnr_star == float("inf") else psnr_star,
                 "ssim": compute_ssim(image, seg_star),
             },
@@ -159,10 +172,11 @@ def run(args):
         }
         for name, fn in algos.items():
             r = fn(prob)
-            seg = apply_thresholds(image, r["thresholds"])
+            seg = apply_thresholds(image, r["thresholds"], args.recon)
             psnr = compute_psnr(image, seg)
             rec["algorithms"][name] = {
-                "kapur": float(r["fitness"]),
+                "objective_value": float(r["fitness"]),
+                "kapur": float(ktable.evaluate_one(r["thresholds"])),
                 "thresholds": [int(t) for t in r["thresholds"]],
                 "gap": float(h_star - r["fitness"]),
                 "at_optimum": bool(h_star - r["fitness"] < 1e-9),
@@ -213,7 +227,7 @@ def run(args):
         "kapur_mean": float(h_stars.mean()), "psnr_mean": float(ps_star.mean()) if ps_star.size else None,
         "ssim_mean": float(ss_star.mean()),
     }
-    print("Exact Kapur optimum (DP reference)")
+    print(f"Exact optimum of the {args.objective!r} objective (DP reference)" if args.objective != "kapur" else "Exact Kapur optimum (DP reference)")
     print(f"  Kapur: {h_stars.mean():.4f}")
     print(f"  PSNR:  {ps_star.mean():.4f}")
     print(f"  SSIM:  {ss_star.mean():.4f}")
@@ -251,6 +265,8 @@ def run(args):
         "subset": args.subset, "dev_n": args.dev_n, "images_dir": os.path.abspath(args.images_dir),
         "sma_params": {"N": args.N, "T": args.T, "d": args.d, "seed": args.seed},
         "fitness_path": "legacy" if args.legacy_fitness else "table",
+        "recon": args.recon,
+        "objective": args.objective,
         "v2_overrides": v2_kw,
         "labels": {k: LABELS[k] for k in names},
         "summary": summary,
@@ -282,5 +298,13 @@ if __name__ == "__main__":
                              "(v1 was already verified separately; use this to keep v2-branch runs focused)")
     parser.add_argument("--legacy_fitness", action="store_true",
                         help="run Standard SMA / ESMA v1 through the original per-agent fitness loop")
+    parser.add_argument("--recon", choices=["even", "mean"], default="even",
+                        help="band repaint for PSNR/SSIM: 'even' = original fixed levels 0,64,128,191,255; "
+                             "'mean' = each band painted with its own mean intensity (minimum-MSE repaint, "
+                             "the multilevel-thresholding literature's convention)")
+    parser.add_argument("--objective", choices=["kapur", "otsu", "hybrid"], default="kapur",
+                        help="fitness criterion for ALL algorithms and the exact DP reference "
+                             "(kapur = thesis objective; otsu = between-class variance; "
+                             "hybrid = 0.5/0.5 Kapur/Otsu mix expressed in Kapur units)")
     parser.add_argument("--out", default="./three_way_comparison.json")
     run(parser.parse_args())

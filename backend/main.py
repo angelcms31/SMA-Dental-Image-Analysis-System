@@ -32,6 +32,7 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from sma_algorithms import (
+    KapurEntropyTable,
     apply_thresholds,
     autocrop_black_borders,
     compute_histogram_prob,
@@ -73,9 +74,19 @@ def _encode_image(image: np.ndarray) -> str:
     return f"data:image/png;base64,{base64.b64encode(buffer).decode('utf-8')}"
 
 
-def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed, **extra_kwargs):
-    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, **extra_kwargs)
-    segmented = apply_thresholds(image, result["thresholds"])
+def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed,
+                     levels="even", objective="kapur", **extra_kwargs):
+    """
+    levels:    band repaint of the segmented image that is returned AND scored --
+               "even" (original fixed levels 0, 64, ..., 255) or "mean" (every band
+               painted with its own mean intensity: the minimum-MSE repaint that the
+               multilevel-thresholding literature uses when reporting PSNR/SSIM).
+    objective: fitness criterion -- "kapur" (thesis default), "otsu" or "hybrid".
+               kapur_entropy_fitness is ALWAYS Kapur's entropy of the returned
+               thresholds; objective_value is the value of the optimized criterion.
+    """
+    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, objective=objective, **extra_kwargs)
+    segmented = apply_thresholds(image, result["thresholds"], levels)
 
     psnr = compute_psnr(image, segmented)
     ssim = compute_ssim(image, segmented)
@@ -87,7 +98,12 @@ def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed, **extra_kwa
     return {
         "algorithm": algo_name,
         "thresholds": result["thresholds"],
-        "kapur_entropy_fitness": round(result["fitness"], 6),
+        "kapur_entropy_fitness": round(
+            result["fitness"] if objective == "kapur"
+            else float(KapurEntropyTable(prob).evaluate_one(result["thresholds"])), 6),
+        "objective": objective,
+        "objective_value": round(result["fitness"], 6),
+        "band_levels": levels,
         "psnr": round(psnr, 4) if psnr != float("inf") else None,
         "ssim": round(ssim, 6),
         "runtime_sec": round(result["runtime_sec"], 4),
@@ -109,12 +125,15 @@ async def analyze_standard(
     N: int = Form(30),         # population size
     T: int = Form(100),        # max iterations
     seed: int = Form(None),    # set a fixed seed for reproducible comparisons
+    levels: str = Form("even"),     # band repaint: "even" (original fixed levels) | "mean" (each band = its mean intensity)
+    objective: str = Form("kapur"), # fitness criterion: "kapur" (thesis default) | "otsu" | "hybrid"
 ):
     try:
         contents = await file.read()
         image = _decode_image(contents)
         prob = compute_histogram_prob(image)
-        result = _run_and_package("Standard SMA", standard_sma, image, prob, d, N, T, seed)
+        result = _run_and_package("Standard SMA", standard_sma, image, prob, d, N, T, seed,
+                                  levels=levels, objective=objective)
         return {"status": "success", **result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -133,6 +152,8 @@ async def analyze_enhanced(
     gamma: float = Form(0.10),
     delta: float = Form(0.10),
     h: int = Form(5),
+    levels: str = Form("even"),     # band repaint: "even" (original fixed levels) | "mean" (each band = its mean intensity)
+    objective: str = Form("kapur"), # fitness criterion: "kapur" (thesis default) | "otsu" | "hybrid"
 ):
     try:
         contents = await file.read()
@@ -141,6 +162,7 @@ async def analyze_enhanced(
         result = _run_and_package(
             "Enhanced SMA (ESMA)", enhanced_sma, image, prob, d, N, T, seed,
             k=k, alpha=alpha, beta=beta, gamma=gamma, delta=delta, h=h,
+            levels=levels, objective=objective,
         )
         return {"status": "success", **result}
     except Exception as e:
@@ -157,6 +179,8 @@ async def analyze_improved(
     k: int = Form(3),
     early_stop: bool = Form(True),   # adaptive termination (ESMA v2 addition)
     patience: int = Form(20),
+    levels: str = Form("even"),     # band repaint: "even" (original fixed levels) | "mean" (each band = its mean intensity)
+    objective: str = Form("kapur"), # fitness criterion: "kapur" (thesis default) | "otsu" | "hybrid"
 ):
     """
     Runs ESMA v2 (enhanced_sma_v2): the three thesis objectives with the v1
@@ -172,6 +196,7 @@ async def analyze_improved(
         result = _run_and_package(
             "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed,
             k=k, early_stop=early_stop, patience=patience,
+            levels=levels, objective=objective,
         )
         return {"status": "success", **result}
     except Exception as e:
@@ -198,6 +223,8 @@ async def analyze_compare(
     N: int = Form(30),
     T: int = Form(100),
     seed: int = Form(42),   # same seed for all -> fair side-by-side comparison
+    levels: str = Form("even"),     # band repaint: "even" (original fixed levels) | "mean" (each band = its mean intensity)
+    objective: str = Form("kapur"), # fitness criterion: "kapur" (thesis default) | "otsu" | "hybrid"
 ):
     """
     Runs Standard SMA, the original ESMA and ESMA v2 on the SAME image with
@@ -213,13 +240,16 @@ async def analyze_compare(
         prob = compute_histogram_prob(image)
 
         standard_result = _run_and_package(
-            "Standard SMA", standard_sma, image, prob, d, N, T, seed
+            "Standard SMA", standard_sma, image, prob, d, N, T, seed,
+            levels=levels, objective=objective,
         )
         enhanced_result = _run_and_package(
-            "Enhanced SMA (ESMA)", enhanced_sma, image, prob, d, N, T, seed
+            "Enhanced SMA (ESMA)", enhanced_sma, image, prob, d, N, T, seed,
+            levels=levels, objective=objective,
         )
         improved_result = _run_and_package(
-            "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed
+            "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed,
+            levels=levels, objective=objective,
         )
 
         return {

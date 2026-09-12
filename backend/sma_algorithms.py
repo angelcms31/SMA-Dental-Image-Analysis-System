@@ -280,19 +280,175 @@ def kapur_optimal_thresholds(prob, d, table=None):
     return best, sorted(thr)
 
 
-def apply_thresholds(gray_image: np.ndarray, thresholds) -> np.ndarray:
-    """Segment the image into len(thresholds)+1 intensity bands."""
+class BetweenClassVarianceTable(KapurEntropyTable):
+    """
+    Otsu's criterion as a separable per-class table with the SAME interface as
+    KapurEntropyTable, so every optimizer and the DP work on it unchanged.
+
+    For the class covering bins [lo, hi) with P = sum p_i and M = sum i p_i,
+        B[lo, hi) = P (M/P - mu)^2 = (M - mu P)^2 / P           (mu = global mean)
+    and the sum over classes is the between-class variance sigma_B^2 =
+    sigma_T^2 - sigma_W^2. MAXIMIZING it is Otsu's criterion; because sigma_W^2
+    is exactly the mean-squared error of the class-mean repaint
+    (apply_thresholds(..., levels="mean")), maximizing this table is also
+    exactly "maximize the PSNR of the class-mean segmented image".
+    """
+
+    def __init__(self, prob):
+        prob = np.asarray(prob, dtype=np.float64).ravel()
+        L = prob.shape[0]
+        self.L = L
+        lv = np.arange(L, dtype=np.float64)
+        mu = float((prob * lv).sum())
+        tri = _triu_mask(L)
+        P = np.cumsum(np.where(tri, prob[None, :], 0.0), axis=1)
+        M = np.cumsum(np.where(tri, (prob * lv)[None, :], 0.0), axis=1)
+        valid = P > 1e-12
+        Psafe = np.where(valid, P, 1.0)
+        Bv = np.where(valid, (M - mu * P) ** 2 / Psafe, 0.0)
+        H = np.zeros((L + 1, L + 1))
+        H[:L, 1:] = np.where(tri, Bv, 0.0)
+        self.H = H
+
+
+class HybridObjectiveTable(KapurEntropyTable):
+    """
+    Weighted Kapur / Otsu compromise
+        F = w * H_K / H_K*  +  (1 - w) * sigma_B^2 / sigma_B^2*,
+    each term normalized by its own exact optimum for the same d (two constants
+    computed once per image by the DP -- the optimal THRESHOLDS are never given
+    to the optimizer). Both terms are separable, so the table of the weighted
+    sum is the weighted sum of the tables and the same DP yields its exact
+    optimum. w = 1 is pure Kapur, w = 0 pure Otsu; w = 0.5 is the equal
+    weighting the hybrid-fitness literature settles on (Hosny et al. 2022).
+
+    scale: "kapur" (default) multiplies F by H_K*, so the hybrid is expressed in
+    Kapur units (F* <= H_K*, typically ~19 for d = 4) and Standard SMA's
+    exploitation gate p = tanh|S(i) - DF| sees the same numeric scale as with
+    Kapur's entropy -- its hit rate is scale-dependent (measured: 1% at scale
+    ~19 vs 69% at scale ~3500 on the SAME Kapur objective), while ESMA v2 is
+    scale-invariant. scale=1.0 gives the normalized [0, 1] form; any other
+    positive number is used as the multiplier.
+    """
+
+    def __init__(self, prob, d, weight=0.5, kapur_table=None, otsu_table=None, scale="kapur"):
+        kt = kapur_table if kapur_table is not None else KapurEntropyTable(prob)
+        ot = otsu_table if otsu_table is not None else BetweenClassVarianceTable(prob)
+        hk, _ = kapur_optimal_thresholds(prob, d, table=kt)
+        ho, _ = kapur_optimal_thresholds(prob, d, table=ot)
+        mult = float(hk) if scale == "kapur" else float(scale)
+        self.L = kt.L
+        self.H = mult * (weight * kt.H / max(hk, 1e-12) + (1.0 - weight) * ot.H / max(ho, 1e-12))
+        self.weight = float(weight)
+        self.scale = mult
+        self.norms = (float(hk), float(ho))
+        self.kapur_table = kt
+        self.otsu_table = ot
+
+
+OBJECTIVES = ("kapur", "otsu", "hybrid")
+
+
+def make_objective_table(prob, objective="kapur", d=None, hybrid_weight=0.5, hybrid_scale="kapur"):
+    """
+    Fitness table for the optimizers and the DP. `objective` is "kapur"
+    (default -- Kapur's entropy, the thesis objective), "otsu" (between-class
+    variance), "hybrid" (normalized Kapur/Otsu mix, needs d), or ANY object
+    that already exposes evaluate(X, assume_sorted=False) -> (N,) (a custom,
+    possibly non-separable objective), which is returned unchanged.
+    """
+    if hasattr(objective, "evaluate"):
+        return objective
+    if objective == "kapur":
+        return KapurEntropyTable(prob)
+    if objective == "otsu":
+        return BetweenClassVarianceTable(prob)
+    if objective == "hybrid":
+        if d is None:
+            raise ValueError("objective='hybrid' needs d (its two terms are normalized per d)")
+        return HybridObjectiveTable(prob, d, weight=hybrid_weight, scale=hybrid_scale)
+    raise ValueError(f"objective must be one of {OBJECTIVES} or a table-like object, got {objective!r}")
+
+
+def _objective_table_or_legacy(prob, d, objective, hybrid_weight, fast_fitness):
+    if fast_fitness:
+        return make_objective_table(prob, objective, d, hybrid_weight)
+    if objective != "kapur":
+        raise ValueError("fast_fitness=False (legacy per-agent Kapur loop) supports only objective='kapur'")
+    return None
+
+
+def optimal_thresholds(prob, d, objective="kapur", table=None, hybrid_weight=0.5):
+    """Exact DP optimum (F*, thresholds) for any separable objective -- see kapur_optimal_thresholds."""
+    table = table if table is not None else make_objective_table(prob, objective, d, hybrid_weight)
+    return kapur_optimal_thresholds(prob, d, table=table)
+
+
+BAND_LEVEL_MODES = ("even", "mean")
+
+
+def band_levels(gray_image: np.ndarray, thresholds, levels: str = "even") -> np.ndarray:
+    """
+    Gray value painted into each of the len(thresholds)+1 bands.
+
+    levels="even" : evenly spread levels 0, 255/(n-1), ..., 255 (the original
+                    behaviour -- bands are maximally distinguishable on screen).
+    levels="mean" : the MEAN intensity of the band's own pixels. For fixed
+                    thresholds this is the minimum-MSE repaint, i.e. the highest
+                    PSNR any repaint of those bands can reach, and it is the
+                    "segmented image" convention of the multilevel-thresholding
+                    literature when PSNR / SSIM / FSIM are reported (e.g. Arora
+                    et al. 2008: "each pixel is assigned the mean gray value of
+                    its class"). Thresholds, fitness and every pixel's class
+                    membership are identical under both modes -- only the
+                    repaint differs.
+    """
     th = sorted(int(np.clip(round(t), 0, 255)) for t in thresholds)
     bounds = [0] + th + [256]
-    out = np.zeros_like(gray_image, dtype=np.uint8)
     n_bands = len(bounds) - 1
-    for i in range(n_bands):
-        lo, hi = bounds[i], bounds[i + 1]
-        # evenly spread output gray levels across the band count so bands
-        # are visually distinguishable (0..255)
-        level = int(round(255 * i / max(1, n_bands - 1))) if n_bands > 1 else 255
-        mask = (gray_image >= lo) & (gray_image < hi)
-        out[mask] = level
+    out = np.zeros(n_bands, dtype=np.uint8)
+    if levels == "even":
+        for i in range(n_bands):
+            out[i] = int(round(255 * i / max(1, n_bands - 1))) if n_bands > 1 else 255
+    elif levels == "mean":
+        if gray_image.dtype == np.uint8:
+            hist = np.bincount(gray_image.ravel(), minlength=256).astype(np.float64)
+        else:
+            hist, _ = np.histogram(gray_image, bins=256, range=(0, 256))
+            hist = hist.astype(np.float64)
+        lv = np.arange(256, dtype=np.float64)
+        for i in range(n_bands):
+            lo, hi = bounds[i], bounds[i + 1]
+            if hi <= lo:                      # empty band (duplicate thresholds): never used
+                mu = lo
+            else:
+                mass = hist[lo:hi].sum()
+                mu = (hist[lo:hi] * lv[lo:hi]).sum() / mass if mass > 0 else (lo + hi - 1) / 2.0
+            out[i] = int(np.clip(round(mu), 0, 255))
+    else:
+        raise ValueError(f"levels must be one of {BAND_LEVEL_MODES}, got {levels!r}")
+    return out
+
+
+def apply_thresholds(gray_image: np.ndarray, thresholds, levels: str = "even") -> np.ndarray:
+    """
+    Segment the image into len(thresholds)+1 intensity bands and paint every
+    band with one gray value (see band_levels for the two conventions).
+    levels="even" (default) reproduces the original output byte-for-byte;
+    levels="mean" repaints each band with its own mean intensity.
+    """
+    th = sorted(int(np.clip(round(t), 0, 255)) for t in thresholds)
+    bounds = [0] + th + [256]
+    vals = band_levels(gray_image, th, levels)
+    if gray_image.dtype == np.uint8:
+        lut = np.zeros(256, dtype=np.uint8)
+        for i in range(len(vals)):
+            lut[bounds[i]:bounds[i + 1]] = vals[i]
+        return lut[gray_image]
+    out = np.zeros_like(gray_image, dtype=np.uint8)
+    for i in range(len(vals)):
+        mask = (gray_image >= bounds[i]) & (gray_image < bounds[i + 1])
+        out[mask] = vals[i]
     return out
 
 
@@ -300,7 +456,8 @@ def apply_thresholds(gray_image: np.ndarray, thresholds) -> np.ndarray:
 # 1. STANDARD SMA (Li et al., 2020)
 # ---------------------------------------------------------------------------
 
-def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None, fast_fitness=True):
+def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None, fast_fitness=True,
+                 objective="kapur", hybrid_weight=0.5):
     """
     Baseline / original SMA -- single-leader guidance, random uniform
     initialization, fixed z and iteration-based oscillation schedule.
@@ -315,10 +472,15 @@ def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None, fast_fitness=Tru
     two implementations differ in the last floating-point digit
     (see tests/test_sma_algorithms.py for the measured agreement).
     Pass fast_fitness=False to run the legacy path byte-for-byte.
+
+    objective: "kapur" (default, unchanged behaviour), "otsu", "hybrid" or a
+    table-like object -- see make_objective_table. "fitness" in the returned
+    dict is then the value of THAT objective (recompute Kapur's entropy with
+    KapurEntropyTable(prob).evaluate_one(thresholds) when needed).
     """
     rng = np.random.default_rng(seed)
     t_start = time.perf_counter()
-    table = KapurEntropyTable(prob) if fast_fitness else None
+    table = _objective_table_or_legacy(prob, d, objective, hybrid_weight, fast_fitness)
 
     # --- random uniform initialization ---
     X = rng.uniform(lb, ub, size=(N, d))
@@ -412,6 +574,7 @@ def enhanced_sma(
     pd_low_thresh=0.10,   # tau_PD in the thesis
     adaptive_k=False,     # extension beyond Algorithm 3.1 -- see docstring
     fast_fitness=True,    # table-based population evaluation (see standard_sma docstring)
+    objective="kapur", hybrid_weight=0.5,   # fitness criterion (see make_objective_table); default = thesis objective
 ):
     """
     ESMA implementing all three proposed modifications, matching
@@ -452,7 +615,7 @@ def enhanced_sma(
     """
     rng = np.random.default_rng(seed)
     t_start = time.perf_counter()
-    table = KapurEntropyTable(prob) if fast_fitness else None
+    table = _objective_table_or_legacy(prob, d, objective, hybrid_weight, fast_fitness)
 
     # --- Step 2: quasi-uniform initialization ---
     X = np.zeros((N, d))
@@ -690,6 +853,7 @@ def enhanced_sma_v2(
     local_refine=False,        # opt-in integer-neighbourhood polish of the final best (see _integer_polish)
     fast_fitness=True,         # table-based population evaluation (implementation-level)
     record_history=False,      # return per-iteration a, z, PD, CR traces (for Chapter 4 figures)
+    objective="kapur", hybrid_weight=0.5,   # fitness criterion (see make_objective_table); default = thesis objective
 ):
     """
     Enhanced SMA, version 2. Same three objectives as enhanced_sma() (thesis
@@ -772,7 +936,7 @@ def enhanced_sma_v2(
     k = max(1, min(int(k), N))
     half = max(1, N // 2)
     span = float(ub - lb)
-    table = KapurEntropyTable(prob) if fast_fitness else None
+    table = _objective_table_or_legacy(prob, d, objective, hybrid_weight, fast_fitness)
 
     def _fit(P, sorted_rows):
         if table is not None:
