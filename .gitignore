@@ -61,3 +61,9 @@ Thumbs.db
 backend/yolov8n.pt
 frontend/.deps_installed
 backend/.deps_installed
+Enhanced_vs_Standard_SMA_Ranking.*
+enhanced_vs_standard_ranking.csv
+
+# ===== Generated result documents (regenerate from screenshots/metrics.json) =====
+Standard_vs_Enhanced_SMA_Results_*.docx
+Standard_vs_Enhanced_SMA_Results_*.pdf
