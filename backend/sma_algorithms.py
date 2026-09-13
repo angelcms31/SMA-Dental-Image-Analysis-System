@@ -387,7 +387,7 @@ def optimal_thresholds(prob, d, objective="kapur", table=None, hybrid_weight=0.5
 BAND_LEVEL_MODES = ("even", "mean")
 
 
-def band_levels(gray_image: np.ndarray, thresholds, levels: str = "even") -> np.ndarray:
+def band_levels(gray_image: np.ndarray, thresholds, levels: str = "even", hist=None) -> np.ndarray:
     """
     Gray value painted into each of the len(thresholds)+1 bands.
 
@@ -402,6 +402,13 @@ def band_levels(gray_image: np.ndarray, thresholds, levels: str = "even") -> np.
                     its class"). Thresholds, fitness and every pixel's class
                     membership are identical under both modes -- only the
                     repaint differs.
+    hist:           optional precomputed 256-bin histogram of gray_image (raw
+                    counts OR a normalized probability distribution -- the
+                    per-band weighted mean is a ratio, so any positive scaling
+                    cancels out). Callers that already have one (e.g. main.py's
+                    compute_histogram_prob(image), computed once for the SMA
+                    population fitness) should pass it here to skip a second
+                    full-image histogram pass; only used when levels="mean".
     """
     th = sorted(int(np.clip(round(t), 0, 255)) for t in thresholds)
     bounds = [0] + th + [256]
@@ -411,7 +418,9 @@ def band_levels(gray_image: np.ndarray, thresholds, levels: str = "even") -> np.
         for i in range(n_bands):
             out[i] = int(round(255 * i / max(1, n_bands - 1))) if n_bands > 1 else 255
     elif levels == "mean":
-        if gray_image.dtype == np.uint8:
+        if hist is not None:
+            hist = np.asarray(hist, dtype=np.float64).ravel()
+        elif gray_image.dtype == np.uint8:
             hist = np.bincount(gray_image.ravel(), minlength=256).astype(np.float64)
         else:
             hist, _ = np.histogram(gray_image, bins=256, range=(0, 256))
@@ -430,16 +439,17 @@ def band_levels(gray_image: np.ndarray, thresholds, levels: str = "even") -> np.
     return out
 
 
-def apply_thresholds(gray_image: np.ndarray, thresholds, levels: str = "even") -> np.ndarray:
+def apply_thresholds(gray_image: np.ndarray, thresholds, levels: str = "even", hist=None) -> np.ndarray:
     """
     Segment the image into len(thresholds)+1 intensity bands and paint every
     band with one gray value (see band_levels for the two conventions).
     levels="even" (default) reproduces the original output byte-for-byte;
     levels="mean" repaints each band with its own mean intensity.
+    hist: optional precomputed histogram, forwarded to band_levels (see there).
     """
     th = sorted(int(np.clip(round(t), 0, 255)) for t in thresholds)
     bounds = [0] + th + [256]
-    vals = band_levels(gray_image, th, levels)
+    vals = band_levels(gray_image, th, levels, hist=hist)
     if gray_image.dtype == np.uint8:
         lut = np.zeros(256, dtype=np.uint8)
         for i in range(len(vals)):

@@ -39,6 +39,7 @@ from sma_algorithms import (
     enhanced_sma,
     enhanced_sma_v2,
     kapurs_entropy_fitness,
+    make_objective_table,
     standard_sma,
 )
 from metrics import compute_psnr, compute_ssim
@@ -75,7 +76,8 @@ def _encode_image(image: np.ndarray) -> str:
 
 
 def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed,
-                     levels="even", objective="kapur", **extra_kwargs):
+                     levels="even", objective="kapur", table=None, kapur_table=None,
+                     **extra_kwargs):
     """
     levels:    band repaint of the segmented image that is returned AND scored --
                "even" (original fixed levels 0, 64, ..., 255) or "mean" (every band
@@ -84,9 +86,18 @@ def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed,
     objective: fitness criterion -- "kapur" (thesis default), "otsu" or "hybrid".
                kapur_entropy_fitness is ALWAYS Kapur's entropy of the returned
                thresholds; objective_value is the value of the optimized criterion.
+    table, kapur_table: pre-built fitness tables (see make_objective_table /
+               KapurEntropyTable) for a caller that runs SEVERAL algorithms on
+               the SAME image+d+objective (analyze_compare) to share, instead
+               of each algorithm call rebuilding its own -- for objective=
+               "hybrid" this skips two redundant exact-DP passes per extra
+               algorithm. `objective` (the string) is still returned as-is for
+               the response/logging; only the table actually used for fitness
+               evaluation is swapped. See ESMA_RUNTIME_OPTIMIZATION_REPORT.md.
     """
-    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, objective=objective, **extra_kwargs)
-    segmented = apply_thresholds(image, result["thresholds"], levels)
+    algo_objective = table if table is not None else objective
+    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, objective=algo_objective, **extra_kwargs)
+    segmented = apply_thresholds(image, result["thresholds"], levels, hist=prob)
 
     psnr = compute_psnr(image, segmented)
     ssim = compute_ssim(image, segmented)
@@ -95,12 +106,16 @@ def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed,
         image, result["thresholds"]
     )
 
+    if objective == "kapur":
+        kapur_fitness = result["fitness"]
+    else:
+        kt = kapur_table if kapur_table is not None else KapurEntropyTable(prob)
+        kapur_fitness = float(kt.evaluate_one(result["thresholds"]))
+
     return {
         "algorithm": algo_name,
         "thresholds": result["thresholds"],
-        "kapur_entropy_fitness": round(
-            result["fitness"] if objective == "kapur"
-            else float(KapurEntropyTable(prob).evaluate_one(result["thresholds"])), 6),
+        "kapur_entropy_fitness": round(kapur_fitness, 6),
         "objective": objective,
         "objective_value": round(result["fitness"], 6),
         "band_levels": levels,
@@ -116,6 +131,22 @@ def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed,
         "quadrant_summary": quadrant_summary,
         "disclaimer": DISCLAIMER,
     }
+
+
+def _shared_tables(prob, d, objective):
+    """One fitness table (+ one Kapur table, for the always-reported Kapur's
+    entropy) for a GIVEN image + d + objective, to be reused across several
+    algorithm runs -- see _run_and_package's table/kapur_table docstring.
+    For objective="kapur" this returns (None, None): _run_and_package then
+    falls back to its original per-call behaviour untouched, since a plain
+    KapurEntropyTable is already cheap to rebuild and this keeps the default
+    (thesis) code path exactly as it was.
+    """
+    if objective == "kapur":
+        return None, None
+    table = make_objective_table(prob, objective, d, hybrid_weight=0.5)
+    kapur_table = getattr(table, "kapur_table", None) or KapurEntropyTable(prob)
+    return table, kapur_table
 
 
 @app.post("/analyze/standard/")
@@ -233,23 +264,31 @@ async def analyze_compare(
     guarantees all algorithms saw identical conditions. The original keys
     (`standard`, `enhanced`, `improvement`) are unchanged; `improved` and
     `improvement_v2` (ESMA v2 vs Standard SMA) are additive.
+
+    For objective="otsu"/"hybrid" the fitness table (and, for hybrid, its two
+    exact-DP normalization constants) is built ONCE here and shared by all
+    three algorithm runs instead of each one rebuilding its own -- this
+    endpoint used to do 3x the objective-table work of a single /analyze/
+    call for no reason, since all three see the same image and d
+    (ESMA_RUNTIME_OPTIMIZATION_REPORT.md).
     """
     try:
         contents = await file.read()
         image = _decode_image(contents)
         prob = compute_histogram_prob(image)
+        table, kapur_table = _shared_tables(prob, d, objective)
 
         standard_result = _run_and_package(
             "Standard SMA", standard_sma, image, prob, d, N, T, seed,
-            levels=levels, objective=objective,
+            levels=levels, objective=objective, table=table, kapur_table=kapur_table,
         )
         enhanced_result = _run_and_package(
             "Enhanced SMA (ESMA)", enhanced_sma, image, prob, d, N, T, seed,
-            levels=levels, objective=objective,
+            levels=levels, objective=objective, table=table, kapur_table=kapur_table,
         )
         improved_result = _run_and_package(
             "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed,
-            levels=levels, objective=objective,
+            levels=levels, objective=objective, table=table, kapur_table=kapur_table,
         )
 
         return {
