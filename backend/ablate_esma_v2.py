@@ -1,8 +1,8 @@
 """
 ablate_esma_v2.py
 ------------------
-Component ablation of ESMA v2 (enhanced_sma_v2): switches each v2 component
-off (or swaps it for the v1 / Standard-SMA alternative) one at a time and
+Component ablation of ESMA (enhanced_sma): switches each component off
+(or swaps it for the Standard-SMA-style alternative) one at a time and
 measures the effect against the EXACT Kapur optimum of every image
 (kapur_optimal_thresholds), which is what makes the numbers interpretable:
 "mean optimality gap" and "share of images where the run found the true
@@ -24,18 +24,19 @@ import json
 import time
 
 import numpy as np
+from scipy.stats import wilcoxon
 
 from bench_common import list_images, prepare_image, select_subset
-from sma_algorithms import enhanced_sma, enhanced_sma_v2, kapur_optimal_thresholds, standard_sma
+from sma_algorithms import enhanced_sma, kapur_optimal_thresholds, standard_sma
 
-# name -> keyword overrides of enhanced_sma_v2 (relative to its defaults)
+# name -> keyword overrides of enhanced_sma (relative to its defaults)
 ABLATIONS = {
-    "ESMA v2 (defaults)": {},
+    "ESMA (defaults)": {},
     "  - canonical ordering (unsorted agents)": {"canonical": False},
     "  - LHS init -> thesis-literal diagonal strata": {"init": "strata"},
     "  - LHS init -> uniform random init": {"init": "uniform"},
     "  - sampled leaders -> weighted centroid": {"leader_mode": "centroid"},
-    "  - rank weights -> raw fitness weights (v1)": {"weight_mode": "fitness"},
+    "  - rank weights -> raw fitness weights": {"weight_mode": "fitness"},
     "  - a(t) adaptation (amplitude fixed at a0)": {"delta": 0.0, "gamma": 0.0},
     "  - early stopping (full T)": {"early_stop": False},
     "  + z(t) exploration channel (wide moves)": {"explore_channel": True, "explore_mode": "wide"},
@@ -45,8 +46,22 @@ ABLATIONS = {
     "  k=3": {"k": 3},
 }
 
+# which ablations get a paired significance test against "ESMA (defaults)",
+# and which Chapter 4 objective each corresponds to -- add/remove entries
+# here to test other rows
+SIGNIFICANCE_TESTS = {
+    "  k=1 (single leader)": "Objective 1 (multi-leader guidance)",
+    "  - LHS init -> uniform random init": "Objective 2 (quasi-uniform initialization)",
+    "  - a(t) adaptation (amplitude fixed at a0)": "Objective 3 (adaptive control)",
+}
+
 
 def evaluate(fn, probs, h_stars, seeds, N, T, d, **kw):
+    """Returns both the aggregate stats (as before) AND the raw per-run
+    gap array, in the SAME order every time (seed outer loop, image inner
+    loop) -- this lets two configurations' gap arrays be paired up
+    image-for-image for a Wilcoxon signed-rank test, since both are run
+    against the identical sequence of (seed, image) pairs."""
     gaps, iters, rts = [], [], []
     for s in seeds:
         for p, h in zip(probs, h_stars):
@@ -61,6 +76,7 @@ def evaluate(fn, probs, h_stars, seeds, N, T, d, **kw):
         "pct_at_optimum": float(100 * np.mean(gaps < 1e-9)),
         "iterations_mean": float(np.mean(iters)), "runtime_ms_mean": float(np.mean(rts) * 1e3),
         "n_runs": int(len(gaps)),
+        "_gaps": gaps,   # raw per-(seed,image) gaps, used only for significance testing below
     }
 
 
@@ -87,18 +103,42 @@ def main(args):
               f"{r['pct_at_optimum']:6.1f}% {r['iterations_mean']:6.1f} {r['runtime_ms_mean']:7.1f}", flush=True)
 
     t0 = time.perf_counter()
-    for name, fn in (("Standard SMA", standard_sma), ("Original ESMA (v1)", enhanced_sma)):
-        rows[name] = evaluate(fn, probs, h_stars, seeds, args.N, args.T, args.d)
-        show(name, rows[name])
+    rows["Standard SMA"] = evaluate(standard_sma, probs, h_stars, seeds, args.N, args.T, args.d)
+    show("Standard SMA", rows["Standard SMA"])
     for name, kw in ABLATIONS.items():
-        rows[name] = dict(evaluate(enhanced_sma_v2, probs, h_stars, seeds, args.N, args.T, args.d, **kw), overrides=kw)
+        rows[name] = dict(evaluate(enhanced_sma, probs, h_stars, seeds, args.N, args.T, args.d, **kw), overrides=kw)
         show(name, rows[name])
     print(f"\n({time.perf_counter() - t0:.0f}s)")
+
+    # --- paired Wilcoxon signed-rank test: each ablation vs. "ESMA (defaults)" ---
+    # valid because evaluate() runs every configuration against the exact same
+    # (seed, image) sequence, so index i in both gap arrays refers to the same
+    # (seed, image) pair -- this is what makes them a matched/paired sample.
+    print("\nSignificance (paired Wilcoxon signed-rank test vs. 'ESMA (defaults)'):")
+    print(f"{'objective':45s} {'ablation row':40s} {'p-value':>10s}  significant?")
+    sig_results = {}
+    base_gaps = rows["ESMA (defaults)"]["_gaps"]
+    for ablation_name, objective_label in SIGNIFICANCE_TESTS.items():
+        other_gaps = rows[ablation_name]["_gaps"]
+        diffs = other_gaps - base_gaps
+        if np.allclose(diffs, 0):
+            p = 1.0  # identical arrays -- wilcoxon errors on all-zero differences
+        else:
+            _, p = wilcoxon(other_gaps, base_gaps)
+        sig = "Yes (p < 0.05)" if p < 0.05 else "No"
+        print(f"{objective_label:45s} {ablation_name.strip():40s} {p:10.4g}  {sig}")
+        sig_results[ablation_name] = {"objective": objective_label, "p_value": float(p), "significant": bool(p < 0.05)}
+
+    # strip the raw per-run gap arrays before saving -- json.dump can't
+    # serialize numpy arrays, and the aggregate stats already summarize them
+    for r in rows.values():
+        r.pop("_gaps", None)
 
     with open(args.out, "w") as f:
         json.dump({"subset": args.subset, "n_images": len(probs), "seeds": seeds,
                    "sma_params": {"N": args.N, "T": args.T, "d": args.d},
-                   "exact_optimum_kapur_mean": float(np.mean(h_stars)), "rows": rows}, f, indent=1)
+                   "exact_optimum_kapur_mean": float(np.mean(h_stars)), "rows": rows,
+                   "significance_vs_defaults": sig_results}, f, indent=1)
     print(f"Saved -> {args.out}")
 
 

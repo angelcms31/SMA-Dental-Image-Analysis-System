@@ -22,14 +22,14 @@ from sma_algorithms import (
     autocrop_black_borders,
     compute_histogram_prob,
     enhanced_sma,
-    enhanced_sma_v2,
+    enhanced_sma,
     standard_sma,
 )
 
 ALGO_FUNCS = {
     "standard": standard_sma,
     "enhanced": enhanced_sma,
-    "enhanced_v2": enhanced_sma_v2,
+    "enhanced_v2": enhanced_sma,
 }
 
 
@@ -68,7 +68,7 @@ def sma_preprocess(image, algorithm="enhanced", d=4, N=30, T=150, seed=42,
     if algorithm == "enhanced":
         algo_kwargs = {"adaptive_k": adaptive_k}
     else:
-        # enhanced_sma_v2 has its own, unrelated set of keyword options
+        # enhanced_sma has its own, unrelated set of keyword options
         # (k, leader_mode, early_stop, etc.) -- use its defaults here,
         # which already embed the fixes/choices documented in its
         # docstring. standard_sma takes no extra kwargs.

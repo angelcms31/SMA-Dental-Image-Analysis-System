@@ -47,7 +47,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
-from sma_algorithms import compute_histogram_prob, enhanced_sma, enhanced_sma_v2, standard_sma
+from sma_algorithms import compute_histogram_prob, enhanced_sma, enhanced_sma, standard_sma
 
 
 def load_dentex(json_path, images_dir):
@@ -178,8 +178,8 @@ def run_pipeline(json_path, images_dir, N, T, n_folds, max_samples, seed, out_di
         algo_specs.append(("enhanced", enhanced_sma, {"adaptive_k": True} if use_adaptive_k else {}))
     if include_v2:
         # v2 defaults already include early_stop=True, k=5, lhs init, etc.
-        # -- see sma_algorithms.py's enhanced_sma_v2 docstring for details.
-        algo_specs.append(("enhanced_v2", enhanced_sma_v2, {}))
+        # -- see sma_algorithms.py's enhanced_sma docstring for details.
+        algo_specs.append(("enhanced_v2", enhanced_sma, {}))
 
     for algo_name, algo_fn, algo_kwargs in algo_specs:
         print(f"\nExtracting features using {algo_name} SMA "
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     parser.add_argument("--adaptive_k", action="store_true",
                          help="Use diversity-driven adaptive leader count for ESMA v1 (extension beyond literal Algorithm 3.1)")
     parser.add_argument("--include_v2", action="store_true",
-                         help="Also extract features and train a classifier using enhanced_sma_v2")
+                         help="Also extract features and train a classifier using enhanced_sma")
     parser.add_argument("--skip_v1", action="store_true",
                          help="Skip ESMA v1 entirely -- Standard vs v2 only (v1 already verified "
                               "separately; use this to keep v2-branch runs focused)")

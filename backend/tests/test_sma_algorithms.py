@@ -132,8 +132,8 @@ def test_fast_and_legacy_fitness_paths_agree(ref):
             assert slow["thresholds"] == fast["thresholds"]
             assert abs(slow["fitness"] - fast["fitness"]) < 1e-9
             assert np.allclose(slow["convergence"], fast["convergence"], atol=1e-9)
-        v_slow = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, fast_fitness=False)
-        v_fast = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, fast_fitness=True)
+        v_slow = sa.enhanced_sma(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, fast_fitness=False)
+        v_fast = sa.enhanced_sma(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, fast_fitness=True)
         assert v_slow["thresholds"] == v_fast["thresholds"]
         assert abs(v_slow["fitness"] - v_fast["fitness"]) < 1e-9
 
@@ -159,11 +159,11 @@ def _check_result(r, prob, d, T):
 def test_v2_output_schema_validity_and_determinism(ref):
     N, T, d, seed = ref["params"]
     for prob in ref["probs"][:8]:
-        r = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed)
+        r = sa.enhanced_sma(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed)
         _check_result(r, prob, d, T)
-        r_again = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed)
+        r_again = sa.enhanced_sma(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed)
         assert r_again["thresholds"] == r["thresholds"] and r_again["fitness"] == r["fitness"]
-        full = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, early_stop=False)
+        full = sa.enhanced_sma(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, early_stop=False)
         _check_result(full, prob, d, T)
         assert full["iterations_used"] == T
 
@@ -178,23 +178,23 @@ def test_v2_all_component_switches_run(ref):
         dict(local_refine=True), dict(record_history=True), dict(delta=0.0, gamma=0.0),
     ]
     for kw in variants:
-        r = sa.enhanced_sma_v2(prob, d=d, N=N, T=20, lb=0, ub=255, seed=seed, **kw)
+        r = sa.enhanced_sma(prob, d=d, N=N, T=20, lb=0, ub=255, seed=seed, **kw)
         _check_result(r, prob, d, 20)
-    hist = sa.enhanced_sma_v2(prob, d=d, N=N, T=20, seed=seed, early_stop=False, record_history=True)["history"]
+    hist = sa.enhanced_sma(prob, d=d, N=N, T=20, seed=seed, early_stop=False, record_history=True)["history"]
     assert all(len(hist[key]) == 20 for key in ("a", "z", "PD", "CR", "n_reinit"))
     assert all(0.01 - 1e-12 <= z <= 0.30 + 1e-12 for z in hist["z"])
     assert all(0.02 - 1e-12 <= a <= 2.5 + 1e-12 for a in hist["a"])
     for d_small in (1, 2, 3):
-        _check_result(sa.enhanced_sma_v2(prob, d=d_small, N=12, T=15, seed=seed), prob, d_small, 15)
+        _check_result(sa.enhanced_sma(prob, d=d_small, N=12, T=15, seed=seed), prob, d_small, 15)
     with pytest.raises(ValueError):
-        sa.enhanced_sma_v2(prob, d=d, N=N, T=5, seed=seed, init="bogus")
+        sa.enhanced_sma(prob, d=d, N=N, T=5, seed=seed, init="bogus")
 
 
 def test_v2_local_polish_never_decreases_fitness(ref):
     N, T, d, seed = ref["params"]
     for prob in ref["probs"][:10]:
-        base = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, seed=seed, early_stop=False)
-        polished = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, seed=seed, early_stop=False, local_refine=True)
+        base = sa.enhanced_sma(prob, d=d, N=N, T=T, seed=seed, early_stop=False)
+        polished = sa.enhanced_sma(prob, d=d, N=N, T=T, seed=seed, early_stop=False, local_refine=True)
         assert polished["fitness"] >= base["fitness"] - 1e-12
         h_star, _ = sa.kapur_optimal_thresholds(prob, d)
         assert polished["fitness"] <= h_star + 1e-9
@@ -221,7 +221,7 @@ def test_v2_beats_or_matches_v1_on_reference_set(ref):
     gaps_v2, gaps_v1 = [], []
     for i, prob in enumerate(ref["probs"][:40]):
         h_star, _ = sa.kapur_optimal_thresholds(prob, d)
-        r = sa.enhanced_sma_v2(prob, d=d, N=N, T=T, seed=seed, early_stop=False)
+        r = sa.enhanced_sma(prob, d=d, N=N, T=T, seed=seed, early_stop=False)
         gaps_v2.append(h_star - r["fitness"])
         gaps_v1.append(h_star - ref["esma_fit"][i])
     assert np.mean(gaps_v2) <= np.mean(gaps_v1) + 1e-12

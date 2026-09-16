@@ -36,7 +36,6 @@ from sma_algorithms import (
     autocrop_black_borders,
     compute_histogram_prob,
     enhanced_sma,
-    enhanced_sma_v2,
     kapurs_entropy_fitness,
     standard_sma,
 )
@@ -91,7 +90,7 @@ def _run_and_package(algo_name, algo_fn, image, prob, d, N, T, seed, **extra_kwa
         "psnr": round(psnr, 4) if psnr != float("inf") else None,
         "ssim": round(ssim, 6),
         "runtime_sec": round(result["runtime_sec"], 4),
-        # ESMA v2 may stop early (adaptive termination); legacy algorithms always run T iterations
+        # ESMA may stop early (adaptive termination); Standard SMA always runs T iterations
         "iterations_used": result.get("iterations_used", len(result["convergence"]) - 1),
         "convergence_curve": [round(v, 6) for v in result["convergence"]],
         "segmented_image": _encode_image(segmented),
@@ -127,50 +126,23 @@ async def analyze_enhanced(
     N: int = Form(30),
     T: int = Form(100),
     seed: int = Form(None),
-    k: int = Form(3),
-    alpha: float = Form(0.10),
-    beta: float = Form(0.10),
-    gamma: float = Form(0.10),
-    delta: float = Form(0.10),
-    h: int = Form(5),
+    k: int = Form(5),
+    early_stop: bool = Form(True),   # adaptive termination
+    patience: int = Form(20),
 ):
+    """
+    Runs ESMA: the three thesis objectives (fitness-weighted multi-leader
+    guidance, quasi-uniform Latin Hypercube initialization, and
+    performance-feedback adaptive control of the oscillation bound), with
+    adaptive termination. Same response shape as /analyze/standard/ plus
+    `iterations_used`.
+    """
     try:
         contents = await file.read()
         image = _decode_image(contents)
         prob = compute_histogram_prob(image)
         result = _run_and_package(
             "Enhanced SMA (ESMA)", enhanced_sma, image, prob, d, N, T, seed,
-            k=k, alpha=alpha, beta=beta, gamma=gamma, delta=delta, h=h,
-        )
-        return {"status": "success", **result}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/analyze/improved/")
-async def analyze_improved(
-    file: UploadFile = File(...),
-    d: int = Form(4),
-    N: int = Form(30),
-    T: int = Form(100),
-    seed: int = Form(None),
-    k: int = Form(3),
-    early_stop: bool = Form(True),   # adaptive termination (ESMA v2 addition)
-    patience: int = Form(20),
-):
-    """
-    Runs ESMA v2 (enhanced_sma_v2): the three thesis objectives with the v1
-    defects repaired (canonical ordering, Latin-hypercube quasi-uniform
-    initialization, sampled fitness-weighted multi-leader guidance, bounded
-    normalized feedback control of z(t)/a(t), adaptive termination). Same
-    response shape as /analyze/enhanced/ plus `iterations_used`.
-    """
-    try:
-        contents = await file.read()
-        image = _decode_image(contents)
-        prob = compute_histogram_prob(image)
-        result = _run_and_package(
-            "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed,
             k=k, early_stop=early_stop, patience=patience,
         )
         return {"status": "success", **result}
@@ -200,12 +172,10 @@ async def analyze_compare(
     seed: int = Form(42),   # same seed for all -> fair side-by-side comparison
 ):
     """
-    Runs Standard SMA, the original ESMA and ESMA v2 on the SAME image with
-    the SAME population/iteration/seed settings. This is the endpoint your
-    Chapter 4 comparative-analysis table should pull from, since it
-    guarantees all algorithms saw identical conditions. The original keys
-    (`standard`, `enhanced`, `improvement`) are unchanged; `improved` and
-    `improvement_v2` (ESMA v2 vs Standard SMA) are additive.
+    Runs Standard SMA and ESMA on the SAME image with the SAME
+    population/iteration/seed settings. This is the endpoint your Chapter 4
+    comparative-analysis table should pull from, since it guarantees both
+    algorithms saw identical conditions.
     """
     try:
         contents = await file.read()
@@ -218,18 +188,12 @@ async def analyze_compare(
         enhanced_result = _run_and_package(
             "Enhanced SMA (ESMA)", enhanced_sma, image, prob, d, N, T, seed
         )
-        improved_result = _run_and_package(
-            "Enhanced SMA v2 (ESMA v2)", enhanced_sma_v2, image, prob, d, N, T, seed
-        )
 
         return {
             "status": "success",
             "standard": standard_result,
             "enhanced": enhanced_result,
-            "improved": improved_result,
             "improvement": _gains(standard_result, enhanced_result),
-            "improvement_v2": _gains(standard_result, improved_result),
-            "improvement_v2_vs_v1": _gains(enhanced_result, improved_result),
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -290,7 +254,7 @@ async def analyze_classify(
             raise ValueError("Could not decode image -- check the file is a valid image.")
 
         algo_fn = standard_sma if algorithm == "standard" else enhanced_sma
-        algo_kwargs = {"adaptive_k": True} if algorithm == "enhanced" else {}
+        algo_kwargs = {} if algorithm == "standard" else {}
         features = extract_features(crop, algo_fn, N, T, seed=seed, algo_kwargs=algo_kwargs)
 
         clf = bundle["model"]
@@ -360,11 +324,11 @@ async def analyze_classify_full(
         prob = compute_histogram_prob(image)
 
         sma_fn = standard_sma if algorithm == "standard" else enhanced_sma
-        sma_kwargs = {"adaptive_k": True} if algorithm == "enhanced" else {}
+        sma_kwargs = {}
         sma_result = sma_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, **sma_kwargs)
 
         clf_algo_fn = standard_sma if algorithm == "standard" else enhanced_sma
-        clf_algo_kwargs = {"adaptive_k": True} if algorithm == "enhanced" else {}
+        clf_algo_kwargs = {}
         clf = clf_bundle["model"]
 
         def label_fn(crop_patch):

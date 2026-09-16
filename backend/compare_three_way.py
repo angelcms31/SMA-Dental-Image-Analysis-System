@@ -2,7 +2,7 @@
 compare_three_way.py
 ---------------------
 Three-way benchmark on FULL OPG images: Standard SMA vs the original ESMA
-(v1, enhanced_sma) vs ESMA v2 (enhanced_sma_v2), run on identical images,
+(v1, enhanced_sma) vs ESMA v2 (enhanced_sma), run on identical images,
 seeds and settings. Reports, per algorithm and per algorithm PAIR:
 
   * Kapur's entropy, PSNR, SSIM, runtime, iterations used (v2 may stop early)
@@ -48,7 +48,7 @@ from sma_algorithms import (
     KapurEntropyTable,
     apply_thresholds,
     enhanced_sma,
-    enhanced_sma_v2,
+    enhanced_sma,
     kapur_optimal_thresholds,
     standard_sma,
 )
@@ -75,16 +75,16 @@ def build_algorithms(N, T, d, seed, legacy_fitness, v2_kw, variants, skip_v1=Fal
     common = dict(d=d, N=N, T=T, lb=0, ub=255, seed=seed)
     algos = {
         "standard_sma": lambda prob: standard_sma(prob, fast_fitness=ff, **common),
-        "esma_v2": lambda prob: enhanced_sma_v2(prob, **common, **v2_kw),
+        "esma_v2": lambda prob: enhanced_sma(prob, **common, **v2_kw),
     }
     if not skip_v1:
         algos["esma_v1"] = lambda prob: enhanced_sma(prob, fast_fitness=ff, **common)
     if "fullT" in variants:
         kw = dict(v2_kw, early_stop=False)
-        algos["esma_v2_fullT"] = lambda prob: enhanced_sma_v2(prob, **common, **kw)
+        algos["esma_v2_fullT"] = lambda prob: enhanced_sma(prob, **common, **kw)
     if "polish" in variants:
         kw2 = dict(v2_kw, local_refine=True)
-        algos["esma_v2_polish"] = lambda prob: enhanced_sma_v2(prob, **common, **kw2)
+        algos["esma_v2_polish"] = lambda prob: enhanced_sma(prob, **common, **kw2)
     return algos
 
 
@@ -276,7 +276,7 @@ if __name__ == "__main__":
                         help="algorithm seed AND the shuffle seed of the image list (as in compare_full_images.py)")
     parser.add_argument("--variants", default="fullT,polish",
                         help="comma list of extra ESMA v2 rows: fullT, polish (empty string for none)")
-    parser.add_argument("--v2_kw", default=None, help="JSON dict of enhanced_sma_v2 keyword overrides")
+    parser.add_argument("--v2_kw", default=None, help="JSON dict of enhanced_sma keyword overrides")
     parser.add_argument("--skip_v1", action="store_true",
                         help="Exclude ESMA v1 from the run entirely -- Standard SMA vs ESMA v2 only "
                              "(v1 was already verified separately; use this to keep v2-branch runs focused)")
