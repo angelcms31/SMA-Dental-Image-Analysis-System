@@ -1,5 +1,6 @@
 import React, { useState, ChangeEvent } from 'react';
 import axios from 'axios';
+import AlgorithmSimulation from './AlgorithmSimulation';
 
 type AlgoTab = 'standard' | 'enhanced';
 
@@ -64,6 +65,7 @@ export default function OpgAnalyzer() {
   const [activeTab, setActiveTab] = useState<AlgoTab>('standard');
   const [resultsView, setResultsView] = useState<'findings' | 'metrics'>('findings');
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+  const [showSimulation, setShowSimulation] = useState<boolean>(false);
 
   const [results, setResults] = useState<Record<AlgoTab, AnalyzeResult | null>>({
     standard: null,
@@ -83,9 +85,6 @@ export default function OpgAnalyzer() {
     }
   };
 
-  // Runs one algorithm end-to-end (core metrics + YOLO detector, merged).
-  // Returns the result rather than setting state, so handleRunBoth can
-  // await both algorithms in parallel from a single button.
   const runAlgorithm = async (algo: AlgoTab, file: File): Promise<AnalyzeResult> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -127,7 +126,6 @@ export default function OpgAnalyzer() {
     };
   };
 
-  // Runs a single algorithm and switches display to it immediately.
   const handleRunSingle = async (algo: AlgoTab) => {
     if (!selectedFile) return;
     setIsProcessing(true);
@@ -143,8 +141,6 @@ export default function OpgAnalyzer() {
     }
   };
 
-  // Runs Standard and Enhanced together. The tab switcher below then
-  // changes which already-computed result is shown.
   const handleRunBoth = async () => {
     if (!selectedFile) return;
     setIsProcessing(true);
@@ -166,7 +162,6 @@ export default function OpgAnalyzer() {
 
   return (
     <div className="min-h-screen bg-[#F5F6F8] font-['Inter',sans-serif] pb-16">
-      {/* Header -- compact, single row */}
       <div
         className="w-full px-6 py-4"
         style={{ background: 'linear-gradient(135deg, #3A5661 0%, #577E89 55%, #6F9F9C 100%)' }}
@@ -178,14 +173,16 @@ export default function OpgAnalyzer() {
             </h1>
             <p className="text-white/60 text-xs mt-0.5">Dental OPG segmentation comparison</p>
           </div>
+          <button
+            onClick={() => setShowSimulation(true)}
+            className="text-xs font-medium text-white/90 hover:text-white border border-white/30 hover:border-white/60 rounded-full px-4 py-1.5 transition-colors shrink-0"
+          >
+            ▶ View Algorithm Simulation
+          </button>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-6 mt-6">
-        {/* Upload card -- file picker + three run buttons (Standard /
-            Enhanced / Both). Each single-algorithm button also switches
-            the active tab to that algorithm; results differ per tab
-            since each holds its own computed result. */}
         <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 mb-6">
           <div className="flex flex-wrap items-center gap-3">
             <input
@@ -249,8 +246,6 @@ export default function OpgAnalyzer() {
           </div>
         </div>
 
-        {/* Two-column canvas: Original | Findings, wide aspect ratio
-            matching panoramic X-rays for a bigger, clearer image */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="rounded-2xl overflow-hidden bg-[#14181F]">
             <div className="px-4 py-3 border-b border-white/10">
@@ -320,8 +315,6 @@ export default function OpgAnalyzer() {
           </div>
         </div>
 
-        {/* Results panel -- full width below the images, Findings shown
-            first by default, laid out as a grid instead of a long list */}
         <div className="rounded-2xl overflow-hidden bg-[#14181F] mb-6">
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
             <span className="text-white/50 text-xs font-medium tracking-wide">RESULTS</span>
@@ -388,7 +381,6 @@ export default function OpgAnalyzer() {
           </div>
         </div>
 
-        {/* Fullscreen image modal */}
         {fullscreenImage && (
           <div
             onClick={() => setFullscreenImage(null)}
@@ -410,7 +402,6 @@ export default function OpgAnalyzer() {
           </div>
         )}
 
-        {/* Side-by-side comparison once both have been run */}
         {bothDone && (
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 md:p-6 mb-6">
             <h3 className="text-sm font-semibold text-slate-800 mb-4">Standard vs Enhanced</h3>
@@ -442,7 +433,6 @@ export default function OpgAnalyzer() {
           </div>
         )}
 
-        {/* Legend -- includes the permanent, always-visible disclaimer at the bottom */}
         <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-black/[0.04] p-5 mb-6">
           <h3 className="text-xs font-semibold text-slate-500 tracking-wide mb-3">HOW TO READ THIS</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-4">
@@ -491,6 +481,8 @@ export default function OpgAnalyzer() {
         </div>
 
       </div>
+
+      {showSimulation && <AlgorithmSimulation onClose={() => setShowSimulation(false)} />}
     </div>
   );
 }
