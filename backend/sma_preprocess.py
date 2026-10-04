@@ -22,7 +22,6 @@ from sma_algorithms import (
     autocrop_black_borders,
     compute_histogram_prob,
     enhanced_sma,
-    enhanced_sma,
     standard_sma,
 )
 
@@ -40,9 +39,9 @@ def sma_preprocess(image, algorithm="enhanced", d=4, N=30, T=150, seed=42,
     image where the pixel values have been replaced by the chosen
     algorithm's multilevel-thresholded (segmented) output.
 
-    algorithm: "standard", "enhanced" (ESMA v1), or "enhanced_v2"
-               (ESMA v2) -- selects which SMA variant does the
-               preprocessing.
+    algorithm: "standard" or "enhanced" (the proposed ESMA).
+               "enhanced_v2" is kept as an alias of "enhanced" for
+               older callers.
 
     crop_borders=False keeps the output the SAME SIZE/framing as the
     input (only pixel intensities change, nothing is cropped) -- this
@@ -65,15 +64,9 @@ def sma_preprocess(image, algorithm="enhanced", d=4, N=30, T=150, seed=42,
     hist_source = autocrop_black_borders(gray) if crop_borders else gray
     prob = compute_histogram_prob(hist_source)
 
-    if algorithm == "enhanced":
-        algo_kwargs = {"adaptive_k": adaptive_k}
-    else:
-        # enhanced_sma has its own, unrelated set of keyword options
-        # (k, leader_mode, early_stop, etc.) -- use its defaults here,
-        # which already embed the fixes/choices documented in its
-        # docstring. standard_sma takes no extra kwargs.
-        algo_kwargs = {}
-    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, **algo_kwargs)
+    # both algorithms run with their own defaults (ESMA: k=5, LHS init,
+    # sorted thresholds, patience=20)
+    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed)
 
     target = hist_source if crop_borders else gray
     segmented = apply_thresholds(target, result["thresholds"])

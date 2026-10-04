@@ -292,7 +292,8 @@ def apply_thresholds(gray_image: np.ndarray, thresholds) -> np.ndarray:
 # 1. STANDARD SMA (Li et al., 2020)
 # ---------------------------------------------------------------------------
 
-def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None, fast_fitness=True):
+def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None, fast_fitness=True,
+                 record_positions=False):
     """
     The original Slime Mould Algorithm, unmodified. Every agent follows
     a single global best-known solution, the starting population is
@@ -319,6 +320,12 @@ def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None, fast_fitness=Tru
     Xb = X[best_idx].copy()
     bF = float(fitness[best_idx])
     convergence = [bF]
+
+    # optional trace for the simulation view (does not touch the search:
+    # nothing here draws from rng or changes X / fitness)
+    pos_hist = [X.copy()] if record_positions else None
+    lead_hist = [[best_idx]] if record_positions else None
+    a_hist = [1.0] if record_positions else None
 
     for t in range(1, T + 1):
         order = np.argsort(-fitness)          # descending: index 0 = best
@@ -380,14 +387,23 @@ def standard_sma(prob, d, N=30, T=100, lb=0, ub=255, seed=None, fast_fitness=Tru
             bF = float(fitness[gen_best])
 
         convergence.append(bF)
+        if record_positions:
+            pos_hist.append(X.copy())
+            lead_hist.append([gen_best])
+            a_hist.append(float(a))
 
     elapsed = time.perf_counter() - t_start
-    return {
+    out = {
         "thresholds": sorted(int(round(v)) for v in Xb),
         "fitness": bF,
         "convergence": convergence,
         "runtime_sec": elapsed,
     }
+    if record_positions:
+        out["positions"] = pos_hist
+        out["leaders"] = lead_hist
+        out["a_trace"] = a_hist
+    return out
 
 
 
@@ -499,6 +515,8 @@ def enhanced_sma(
     local_refine=False,        # optional final +/-1 touch-up pass (see _integer_polish)
     fast_fitness=True,         # use the fast lookup-table scoring method
     record_history=False,      # also return the a(t)/z(t)/PD/CR values from every iteration
+    record_positions=False,    # also return every agent's position at every iteration
+                               # (used only by the simulation view; does not affect the search)
 ):
     """
     The Enhanced Slime Mould Algorithm (ESMA), implementing the three
@@ -583,6 +601,7 @@ def enhanced_sma(
 
     # ---- Objective 2: quasi-uniform initialization ----
     X = _initial_population(rng, N, d, lb, ub, init)
+    init_unsorted = X.copy() if record_positions else None
     if canonical:
         X.sort(axis=1)
 
@@ -610,6 +629,11 @@ def enhanced_sma(
     hist = {"a": [], "z": [], "PD": [], "CR": [], "n_reinit": []} if record_history else None
     sign = np.where(np.arange(N) < half, 1.0, -1.0)
     rank_w = np.arange(k, 0, -1, dtype=np.float64)
+
+    # optional trace for the simulation view (does not touch the search)
+    pos_hist = [X.copy()] if record_positions else None
+    lead_hist = [np.argsort(-fitness)[:k].tolist()] if record_positions else None
+    a_hist = [a] if record_positions else None
 
     for t in range(1, T + 1):
         # --- rank the population, pick the top-k leaders ---
@@ -719,6 +743,10 @@ def enhanced_sma(
         if hist is not None:
             hist["a"].append(a); hist["z"].append(z); hist["PD"].append(PD)
             hist["CR"].append(CR); hist["n_reinit"].append(n_re)
+        if record_positions:
+            pos_hist.append(X.copy())
+            lead_hist.append(np.argsort(-fitness)[:k].tolist())
+            a_hist.append(float(a))
 
         # stop early once the best score has stalled for `patience` iterations
         if early_stop and (t - last_improve) >= patience:
@@ -739,4 +767,8 @@ def enhanced_sma(
         "n_reinitialized": n_reinit_total,
         "n_polish_evaluations": n_polish_eval,
         "history": hist,
+        "positions": pos_hist,
+        "leaders": lead_hist,
+        "a_trace": a_hist,
+        "init_unsorted": init_unsorted,
     }

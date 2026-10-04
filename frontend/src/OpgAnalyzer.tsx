@@ -482,7 +482,9 @@ export default function OpgAnalyzer() {
 
       </div>
 
-      {showSimulation && <AlgorithmSimulation onClose={() => setShowSimulation(false)} />}
+      {showSimulation && (
+        <AlgorithmSimulation onClose={() => setShowSimulation(false)} selectedFile={selectedFile} />
+      )}
     </div>
   );
 }

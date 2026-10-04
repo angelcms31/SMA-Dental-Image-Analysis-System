@@ -49,6 +49,8 @@ YOLO_WEIGHTS_PATH = os.environ.get("YOLO_WEIGHTS_PATH", "./runs_yolo/train/weigh
 MODELS_DIR = os.environ.get("DENTEX_MODELS_DIR", "./models")
 
 app = FastAPI(title="ESMA Dental OPG Segmentation API")
+from simulation_api import router as simulation_router
+app.include_router(simulation_router)
 
 app.add_middleware(
     CORSMiddleware,

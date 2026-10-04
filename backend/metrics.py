@@ -1,8 +1,7 @@
 """
 metrics.py
 ----------
-Real PSNR and SSIM computation (not faked/deterministic-random like the
-old placeholder code). These are computed between the ORIGINAL grayscale
+Real PSNR and SSIM computation. These are computed between the ORIGINAL grayscale
 image and the SEGMENTED (thresholded) output -- this is exactly what your
 thesis's 3.2.2 System Architecture "Output" section describes:
 
