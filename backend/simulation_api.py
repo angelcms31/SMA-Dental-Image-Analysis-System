@@ -108,6 +108,8 @@ def _package(name, result, image, k_leaders):
         "positions": _round_positions(result["positions"]),
         "leaders": result["leaders"],
         "segmented_image": _encode_png(apply_thresholds(image, result["thresholds"])),
+        "segmented_color": _encode_png(
+            cv2.applyColorMap(apply_thresholds(image, result["thresholds"]), cv2.COLORMAP_JET)),
     }
 
 
@@ -143,6 +145,8 @@ async def simulate_agents(
             "params": {"d": d, "N": N, "T": T, "seed": seed},
             "optimum": {"thresholds": best_thresholds, "fitness": round(float(best_score), 6)},
             "landscapes": _landscapes(table, best_thresholds, d),
+            "input_image": _encode_png(image),
+            "histogram": np.bincount(image.ravel(), minlength=256)[:256].astype(int).tolist(),
             "standard": _package("Standard SMA", std, image, 1),
             "enhanced": enhanced,
         }

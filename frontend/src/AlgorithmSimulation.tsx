@@ -34,6 +34,7 @@ interface AlgoRun {
   positions: number[][][]; // [iteration][agent][threshold]
   leaders: number[][]; // [iteration][leader rank] -> agent index
   segmented_image: string;
+  segmented_color?: string;
   init_unsorted?: number[][];
 }
 
@@ -51,6 +52,8 @@ interface SimResponse {
   params?: { d: number; N: number; T: number; seed: number };
   optimum?: { thresholds: number[]; fitness: number };
   landscapes?: Record<string, Landscape>; // key "i-j" with i < j
+  input_image?: string;
+  histogram?: number[]; // pixel count per gray level, 0-255
   standard?: AlgoRun;
   enhanced?: AlgoRun;
 }
@@ -313,6 +316,55 @@ const CH_W = 640;
 const CH_H = 260;
 const CH_PAD = { top: 16, right: 16, bottom: 28, left: 52 };
 
+// Gray-level histogram of the input image with the thresholds found by
+// each algorithm drawn as vertical lines.
+function drawHistogram(canvas: HTMLCanvasElement, hist: number[], stdT: number[], esmaT: number[]) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const W = canvas.width;
+  const H = canvas.height;
+  const pad = { left: 44, right: 12, top: 12, bottom: 30 };
+  const iw = W - pad.left - pad.right;
+  const ih = H - pad.top - pad.bottom;
+  // the 0 and 255 bins are often huge (background / saturation); scale to the rest
+  const peak = Math.max(1, ...hist.slice(1, 255));
+  const xAt = (g: number) => pad.left + (g / 255) * iw;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#94A3B8';
+  const bw = iw / 256;
+  hist.forEach((v, g) => {
+    const h = Math.min(1, v / peak) * ih;
+    ctx.fillRect(pad.left + g * bw, pad.top + ih - h, bw + 0.5, h);
+  });
+  ctx.strokeStyle = '#CBD5E1';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad.left, pad.top, iw, ih);
+  ctx.fillStyle = '#64748B';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  [0, 50, 100, 150, 200, 250].forEach((g) => ctx.fillText(String(g), xAt(g), H - 16));
+  ctx.fillText('Gray level', pad.left + iw / 2, H - 3);
+  ctx.textAlign = 'right';
+  ctx.fillText(String(peak), pad.left - 4, pad.top + 9);
+  ctx.fillText('0', pad.left - 4, pad.top + ih);
+  const lines = (ts: number[], color: string, dash: number[]) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash(dash);
+    ts.forEach((t) => {
+      ctx.beginPath();
+      ctx.moveTo(xAt(t), pad.top);
+      ctx.lineTo(xAt(t), pad.top + ih);
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  };
+  lines(stdT, STANDARD_COLOR, [5, 4]);
+  lines(esmaT, ENHANCED_COLOR, []);
+}
+
 function drawConvergence(canvas: HTMLCanvasElement, std: number[], esma: number[], optimum: number, upTo: number) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -418,6 +470,7 @@ export default function AlgorithmSimulation({
   const stdCanvas = useRef<HTMLCanvasElement>(null);
   const esmaCanvas = useRef<HTMLCanvasElement>(null);
   const chartCanvas = useRef<HTMLCanvasElement>(null);
+  const histCanvas = useRef<HTMLCanvasElement>(null);
 
   const runSimulation = useCallback(async () => {
     if (!selectedFile) return;
@@ -540,6 +593,12 @@ export default function AlgorithmSimulation({
     }
   }, [view, iter, data, std, esma, optimum]);
 
+  useEffect(() => {
+    if (view === 'images' && histCanvas.current && data?.histogram && std && esma) {
+      drawHistogram(histCanvas.current, data.histogram, std.thresholds, esma.thresholds);
+    }
+  }, [view, data, std, esma]);
+
   const stdBest = std ? std.convergence[iter] : 0;
   const esmaBest = esma ? esma.convergence[esmaIdx] : 0;
   const esmaStopped = !!esma && iter >= esma.iterations_used && esma.iterations_used < maxIter;
@@ -609,7 +668,7 @@ export default function AlgorithmSimulation({
                 seed
                 <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} className="w-20 border border-slate-200 rounded px-1.5 py-0.5" />
               </label>
-              <button onClick={() => setSeed(Math.floor(Math.random() * 900))} className="border border-slate-200 rounded-full px-3 py-1 hover:bg-slate-50">
+              <button onClick={() => setSeed(100 + Math.floor(Math.random() * 900))} className="border border-slate-200 rounded-full px-3 py-1 hover:bg-slate-50">
                 Randomize seed
               </button>
               <button onClick={runSimulation} className="text-white rounded-full px-3 py-1 font-medium" style={{ backgroundColor: '#3A5661' }}>
@@ -732,14 +791,40 @@ export default function AlgorithmSimulation({
 
             {view === 'images' && (
               <>
+                {data?.histogram && data?.input_image && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5 text-slate-600">Input image</p>
+                      <img src={data.input_image} alt="Input OPG" className="w-full rounded-lg border border-slate-200" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5 text-slate-600">The histogram of image</p>
+                      <canvas ref={histCanvas} width={520} height={260} className="w-full rounded-lg border border-slate-200" />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        <span style={{ color: STANDARD_COLOR }}>- - -</span> SMA thresholds &nbsp;
+                        <span style={{ color: ENHANCED_COLOR }}>——</span> ESMA thresholds
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs font-semibold mb-1.5" style={{ color: STANDARD_COLOR }}>Standard SMA</p>
-                    <img src={std.segmented_image} alt="Standard SMA segmentation" className="w-full rounded-lg border border-slate-200" />
+                    <div className="grid grid-cols-2 gap-2">
+                      {std.segmented_color && (
+                        <img src={std.segmented_color} alt="Standard SMA segmentation (colour)" className="w-full rounded-lg border border-slate-200" />
+                      )}
+                      <img src={std.segmented_image} alt="Standard SMA segmentation" className="w-full rounded-lg border border-slate-200" />
+                    </div>
                   </div>
                   <div>
                     <p className="text-xs font-semibold mb-1.5" style={{ color: ENHANCED_COLOR }}>Enhanced SMA (ESMA)</p>
-                    <img src={esma.segmented_image} alt="ESMA segmentation" className="w-full rounded-lg border border-slate-200" />
+                    <div className="grid grid-cols-2 gap-2">
+                      {esma.segmented_color && (
+                        <img src={esma.segmented_color} alt="ESMA segmentation (colour)" className="w-full rounded-lg border border-slate-200" />
+                      )}
+                      <img src={esma.segmented_image} alt="ESMA segmentation" className="w-full rounded-lg border border-slate-200" />
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-4">

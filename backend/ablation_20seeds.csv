@@ -1,0 +1,12 @@
+group,configuration,hit_rate_pct,mean_gap,mean_iterations,mean_runtime_ms,images_full_esma_better,images_full_esma_worse,runs
+Baseline,Standard SMA,1.5,0.0046,100.0,65.4,300,0,6000
+Full,ESMA (all three objectives),82.8,0.00012,41.4,34.2,0,0,6000
+Objective 1,Single leader (k = 1),72.3,0.00029,38.9,32.4,249,44,6000
+Objective 1,Averaged leaders (weighted centroid),73.9,0.00022,38.9,31.1,227,60,6000
+Objective 1,"Sampled leader, fitness weights",84.3,9e-05,43.9,35.7,101,163,6000
+Objective 2,"Random init, no sorting",78.7,0.00015,45.5,36.1,182,94,6000
+Objective 2,"LHS, no sorting",78.8,0.00016,45.7,36.4,181,98,6000
+Objective 2,Random init + sorting,82.2,0.00012,40.9,33.2,140,124,6000
+Objective 3,"Fixed a, no early stop",90.5,7e-05,100.0,69.6,39,209,6000
+Objective 3,"Adaptive a, no early stop",88.3,9e-05,100.0,69.5,0,197,6000
+Objective 3,Fixed a + early stop,84.5,9e-05,46.1,36.3,102,159,6000
