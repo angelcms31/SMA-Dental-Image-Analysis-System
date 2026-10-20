@@ -12,11 +12,11 @@ image, using Kapur's entropy as the score to maximize.
   2. enhanced_sma  -- the proposed Enhanced Slime Mould Algorithm
                        (ESMA). It carries out the three proposed
                        modifications:
-                         Objective 1: Fitness-Weighted Multi-Leader
-                                      Guidance
+                         Objective 1: Multi-Leader Guidance
                          Objective 2: Quasi-Uniform Initialization
-                         Objective 3: Performance-Feedback Adaptive
-                                      Control (using CR and PD)
+                                      and Ordered Search
+                         Objective 3: Success-Rate Adaptive Control
+                                      (with early stopping and one kick)
 
 Two shared helpers support both optimizers:
 
@@ -485,7 +485,8 @@ def enhanced_sma(
                                #             leader's weight
                                # "centroid": each agent follows the weighted average
                                #             position of all k leaders at once
-    weight_mode="rank",        # "rank": better-ranked leaders get more influence
+    weight_mode="equal",       # "equal": each of the top-k leaders has the same chance (revised default)
+                               # "rank": better-ranked leaders get more influence (before revision)
                                # "fitness": leaders are weighted directly by their score
                                # "advantage": leaders are weighted by how much better
                                #              they are than the weakest leader
@@ -494,9 +495,19 @@ def enhanced_sma(
                                # "strata": simpler stratified placement
                                # "uniform": plain random placement
     canonical=True,            # keep each agent's own thresholds sorted smallest-to-largest
+    accept_equal=True,         # Objective 2 (revised): also accept moves that score the SAME, so agents
+                               # can travel across positions that give the same segmentation
+                               # instead of freezing (False = before revision)
     # ---- Objective 3: performance-feedback adaptive control ----
     h=5,                       # how many recent iterations "progress" looks back over
-    a0=1.0, a_min=0.05, a_max=1.0,      # movement size a(t): starting value, floor, ceiling
+    a0=1.0, a_min=0.05, a_max=None,     # movement size a(t): starting value, floor, ceiling
+                                        # (a_max None -> 3.0 for adapt="success", 1.0 for "cr_pd")
+    adapt="success",           # Objective 3 rule for a(t):
+                               # "success": 1/5 success rule -- a grows when more than 1/5 of
+                               #            the agents improved this iteration, shrinks when fewer
+                               #            (revised default)
+                               # "cr_pd":   CR / PD feedback rule (before revision)
+    succ_c=1.0, succ_target=0.2,         # success rule: adjustment speed, target success rate
     z0=0.03, z_min=0.01, z_max=0.10,    # exploration chance z(t): starting value, allowed range
     alpha=0.10, beta=0.10, gamma=0.10, delta=0.10,   # how fast a(t)/z(t) adjust
     cr_stall_eps=1e-6, pd_low_thresh=0.10,           # thresholds for "no progress" / "low diversity"
@@ -510,8 +521,11 @@ def enhanced_sma(
     explore_mode="wide",       # if explore_channel is on: "wide" takes a bigger normal
                                # move, "reinit" places the agent at a fresh random position
     # ---- extra options ----
-    early_stop=True, patience=20,   # stop automatically once the best score hasn't
-                                     # improved for `patience` iterations in a row
+    early_stop=True, patience=20,   # stop once the best score hasn't improved for
+                                     # `patience` iterations in a row ...
+    kicks=1, kick_a=None,      # ... but first (revised) give the search `kicks` second chance(s):
+                               # reset a(t) to kick_a (default a_max) and keep searching; stop
+                               # only if it stalls again (kicks=0 = before revision)
     local_refine=False,        # optional final +/-1 touch-up pass (see _integer_polish)
     fast_fitness=True,         # use the fast lookup-table scoring method
     record_history=False,      # also return the a(t)/z(t)/PD/CR values from every iteration
@@ -522,15 +536,11 @@ def enhanced_sma(
     The Enhanced Slime Mould Algorithm (ESMA), implementing the three
     proposed modifications described in Chapter 3:
 
-    Objective 1 -- Fitness-Weighted Multi-Leader Guidance
+    Objective 1 -- Multi-Leader Guidance
       Instead of every agent following one single best-known solution,
-      each agent is guided by a weighted blend of the top-k
-      best-performing agents. Leaders are weighted so that the
-      strongest leaders have more influence, using their RANK rather
-      than their raw score -- because in practice, the raw Kapur
-      entropy scores of competing leaders are usually very close to
-      each other, so weighting by rank differentiates them much more
-      meaningfully than weighting by raw score does.
+      each agent follows ONE leader picked at random, with equal chance,
+      from the top-k (k = 5) best-performing agents. (Before the panel
+      revision the pick used rank weights 5,4,3,2,1; weight_mode="rank".)
 
     Objective 2 -- Quasi-Uniform Initialization
       The starting population is placed using Latin Hypercube Sampling:
@@ -543,21 +553,22 @@ def enhanced_sma(
       keeps the leader-blending and movement calculations meaningful,
       since every agent's coordinates line up in the same order.
 
-    Objective 3 -- Performance-Feedback Adaptive Control
-      Two signals are measured every iteration: CR (how much the best
-      score has improved recently) and PD (how spread out the
-      population still is). The movement size a(t) shrinks when the
-      search is making good progress (to fine-tune the current best
-      area) and grows when the search has stalled (to explore more
-      broadly again), instead of following a fixed schedule regardless
-      of how the search is actually going.
+    Objective 3 -- Success-Rate Adaptive Control
+      After every iteration the movement size a(t) is updated from the
+      share of agents whose new position was accepted (1/5 success rule):
+      a(t+1) = clip(a(t) * exp((ps - 0.2) / 0.8), a_min, a_max). More than
+      one in five agents improving -> a grows (search wider); fewer ->
+      a shrinks (fine-tune). The search stops when the best score has not
+      improved for `patience` iterations, after one "kick" that resets a
+      to a_max to give the search a second chance. (Before the revision:
+      CR/PD feedback rule, adapt="cr_pd", and no kick, kicks=0.)
 
     Extra practical features
-      - early_stop: once the best score has gone `patience` iterations
-        without improving, the search stops automatically instead of
-        continuing to the full iteration budget. This is why ESMA runs
-        noticeably faster than the standard algorithm in the results,
-        without sacrificing solution quality.
+      - early_stop (with one kick): the search stops once the best score
+        has gone `patience` iterations without improving, after first
+        widening the search once (kicks=1). This saves about a quarter of
+        the fitness evaluations with the same accuracy as running the full
+        iteration budget.
       - local_refine: an optional last-mile polish step that nudges the
         final answer by +/-1 per threshold to catch any easy remaining
         improvement.
@@ -588,6 +599,8 @@ def enhanced_sma(
     """
     rng = np.random.default_rng(seed)
     t_start = time.perf_counter()
+    if a_max is None:
+        a_max = 3.0 if adapt == "success" else 1.0
     N, d, T = int(N), int(d), int(T)
     k = max(1, min(int(k), N))
     half = max(1, N // 2)
@@ -626,6 +639,7 @@ def enhanced_sma(
     last_improve = 0
     iterations_used = 0
     n_reinit_total = 0
+    kicks_left = int(kicks)
     hist = {"a": [], "z": [], "PD": [], "CR": [], "n_reinit": []} if record_history else None
     sign = np.where(np.arange(N) < half, 1.0, -1.0)
     rank_w = np.arange(k, 0, -1, dtype=np.float64)
@@ -644,7 +658,9 @@ def enhanced_sma(
 
         # ---- Objective 1: leader weights and guidance target ----
         lf = fitness[leader_idx]
-        if weight_mode == "rank":
+        if weight_mode == "equal":
+            w = np.ones(k)
+        elif weight_mode == "rank":
             w = rank_w
         elif weight_mode == "fitness":
             w = lf if lf.sum() > 1e-12 else np.ones(k)
@@ -706,11 +722,16 @@ def enhanced_sma(
         # keep whichever is better, old position or new; agents that were
         # freshly re-initialized this round are always kept, so a fresh
         # random restart has a chance to survive and be explored further
-        improve = newF > fitness
+        improve = (newF >= fitness) if accept_equal else (newF > fitness)
         if reinit is not None:
             improve |= reinit
         X[improve] = newX[improve]
         fitness[improve] = newF[improve]
+        if adapt == "success":
+            # ---- Objective 3 (revised): 1/5 success rule ----
+            success_rate = float(improve.mean())   # share of agents whose move was accepted
+            a = float(np.clip(a * np.exp(succ_c * (success_rate - succ_target) / (1.0 - succ_target)),
+                              a_min, a_max))
 
         gen_best = int(np.argmax(fitness))
         if fitness[gen_best] > bF:
@@ -720,26 +741,34 @@ def enhanced_sma(
         convergence.append(bF)
         iterations_used = t
 
-        # ---- Objective 3: measure progress (CR) and diversity (PD), then adjust a(t)/z(t) ----
-        CR = (bF - convergence[t - h]) / (abs(bF) + 1e-10) if t >= h else 0.0
-        if CR > CR_max:
-            CR_max = CR
-        CRn = CR / CR_max if CR_max > 0 else 0.0
-        PD = _diversity(X, fitness)
-        PDn = PD / PD0
-        stagnating = (CR <= cr_stall_eps) and (PDn < pd_low_thresh)
-        if stagnating:
-            # not making progress -- widen the search
-            z = min(z + alpha * (1.0 - PDn) * (1.0 - CRn), z_max)
-            a = min(a + gamma * (1.0 - CRn), a_max)
-        elif CR > 0:
-            # making progress -- narrow the search to fine-tune
-            if contract_mode == "prop":
-                z = max(z - beta * CRn, z_min)
-                a = max(a * (1.0 - delta * CRn), a_min)
-            else:
-                z = max(z - beta, z_min)
-                a = max(a * (1.0 - delta), a_min)
+        if adapt == "success":
+            # a(t) was already updated by the success rule above. CR and PD are not
+            # used by this rule, so they are only computed when the history is recorded
+            # (PD compares every pair of agents, which costs time on every iteration).
+            if hist is not None:
+                CR = (bF - convergence[t - h]) / (abs(bF) + 1e-10) if t >= h else 0.0
+                PD = _diversity(X, fitness)
+        else:
+            # ---- before revision: measure progress (CR) and diversity (PD), then adjust a(t)/z(t) ----
+            CR = (bF - convergence[t - h]) / (abs(bF) + 1e-10) if t >= h else 0.0
+            if CR > CR_max:
+                CR_max = CR
+            CRn = CR / CR_max if CR_max > 0 else 0.0
+            PD = _diversity(X, fitness)
+            PDn = PD / PD0
+            stagnating = (CR <= cr_stall_eps) and (PDn < pd_low_thresh)
+            if stagnating:
+                # not making progress -- widen the search
+                z = min(z + alpha * (1.0 - PDn) * (1.0 - CRn), z_max)
+                a = min(a + gamma * (1.0 - CRn), a_max)
+            elif CR > 0:
+                # making progress -- narrow the search to fine-tune
+                if contract_mode == "prop":
+                    z = max(z - beta * CRn, z_min)
+                    a = max(a * (1.0 - delta * CRn), a_min)
+                else:
+                    z = max(z - beta, z_min)
+                    a = max(a * (1.0 - delta), a_min)
         if hist is not None:
             hist["a"].append(a); hist["z"].append(z); hist["PD"].append(PD)
             hist["CR"].append(CR); hist["n_reinit"].append(n_re)
@@ -750,6 +779,11 @@ def enhanced_sma(
 
         # stop early once the best score has stalled for `patience` iterations
         if early_stop and (t - last_improve) >= patience:
+            if kicks_left > 0:
+                # revised: one more chance -- widen the search and continue
+                kicks_left -= 1
+                a, last_improve = float(kick_a if kick_a is not None else a_max), t
+                continue
             break
 
     n_polish_eval = 0

@@ -52,9 +52,16 @@ app = FastAPI(title="ESMA Dental OPG Segmentation API")
 from simulation_api import router as simulation_router
 app.include_router(simulation_router)
 
+# Comma-separated list, e.g. set ALLOWED_ORIGINS on Render to the frontend's URL.
+ALLOWED_ORIGINS = [
+    o.strip().rstrip("/")
+    for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -133,10 +140,10 @@ async def analyze_enhanced(
     patience: int = Form(20),
 ):
     """
-    Runs ESMA: the three thesis objectives (fitness-weighted multi-leader
-    guidance, quasi-uniform Latin Hypercube initialization, and
-    performance-feedback adaptive control of the oscillation bound), with
-    adaptive termination. Same response shape as /analyze/standard/ plus
+    Runs ESMA: the three thesis objectives (multi-leader guidance,
+    quasi-uniform initialization and ordered search, and success-rate
+    adaptive control of the oscillation bound), with early stopping and
+    one kick. Same response shape as /analyze/standard/ plus
     `iterations_used`.
     """
     try:

@@ -1,0 +1,32 @@
+DENTEX re-run with the revised ESMA | 300 images | N=30 T=100 d=4
+
+=== PART 2: Ablation (reference = revised ESMA) (n = 300 images x 20 runs) ===
+configuration                                            hit %       gap  iters     ms  rank  ref better/tie/worse   p
+Revised ESMA (all three objectives)                       93.1   0.00004   83.6   54.0  5.67                       
+ESMA before revision                                      82.8   0.00012   41.4   31.4 11.25  235/51/14            < 0.001
+Standard SMA                                               1.5   0.00460  100.0   61.3 15.00  300/0/0              < 0.001
+Single leader (k = 1)                                     88.4   0.00008   79.6   51.6  8.22  129/146/25           < 0.001
+Top-5, rank weights (before revision)                     92.0   0.00006   82.2   52.3  6.34  79/172/49            < 0.001
+Averaged leaders (centroid)                               88.4   0.00009   77.6   47.8  7.59  111/154/35           < 0.001
+Random init, no sorting, strict acceptance                88.7   0.00007   83.1   53.4  8.21  146/117/37           < 0.001
+LHS, no sorting, strict acceptance                        88.3   0.00008   83.2   53.2  8.32  151/124/25           < 0.001
+Random init + sorting + equal-fitness moves               93.4   0.00004   83.3   53.7  5.48  51/182/67            0.249
+LHS + sorting, strict acceptance (before revision)        89.7   0.00005   83.0   53.0  7.61  129/145/26           < 0.001
+Success rule, no early stopping (full T)                  94.0   0.00003  100.0   63.0  5.08  28/206/66            0.014
+Success rule, early stopping without kick                 89.0   0.00008   63.3   41.9  8.44  150/150/0            < 0.001
+CR/PD rule + early stopping (before revision)             84.0   0.00010   43.9   33.1 10.52  215/67/18            < 0.001
+Fixed a = 1, full T                                       93.1   0.00004  100.0   68.0  5.72  67/170/63            0.673
+Fixed a = 1 + early stopping with kick                    91.7   0.00005   69.8   49.1  6.57  91/152/57            0.009
+
+=== PART 3: k sweep (reference = k = 1) (n = 300 images x 20 runs) ===
+configuration                                            hit %       gap  iters     ms  rank  ref better/tie/worse   p
+k = 1                                                     88.4   0.00008   79.6   51.3  5.73                       
+k = 2                                                     90.6   0.00007   80.5   51.7  5.14  54/135/111           < 0.001
+k = 3                                                     91.3   0.00005   81.7   52.8  4.90  48/132/120           < 0.001
+k = 4                                                     92.2   0.00005   82.8   53.6  4.56  32/139/129           < 0.001
+k = 5                                                     93.1   0.00004   83.6   54.2  4.31  25/146/129           < 0.001
+k = 7                                                     94.0   0.00002   85.4   54.9  4.03  22/137/141           < 0.001
+k = 10                                                    95.2   0.00002   87.6   56.3  3.72  11/135/154           < 0.001
+k = 15                                                    95.6   0.00002   90.7   57.6  3.61  9/137/154            < 0.001
+
+Total time 685 s

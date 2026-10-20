@@ -31,6 +31,17 @@ ALGO_FUNCS = {
     "enhanced_v2": enhanced_sma,
 }
 
+# The YOLO detectors were trained on images preprocessed with the ESMA as it was
+# BEFORE the panel revision, so detection must use those same settings.
+# "enhanced" = revised ESMA; "enhanced_v2" = ESMA before revision (used by the detector).
+# These kwargs reproduce the old enhanced_sma_v2 thresholds exactly (checked 25/25
+# DENTEX images at T=150, seed=42).
+ALGO_KWARGS = {
+    "standard": {},
+    "enhanced": {},
+    "enhanced_v2": dict(weight_mode="rank", adapt="cr_pd", accept_equal=False, kicks=0),
+}
+
 
 def sma_preprocess(image, algorithm="enhanced", d=4, N=30, T=150, seed=42,
                     adaptive_k=True, crop_borders=True):
@@ -39,9 +50,9 @@ def sma_preprocess(image, algorithm="enhanced", d=4, N=30, T=150, seed=42,
     image where the pixel values have been replaced by the chosen
     algorithm's multilevel-thresholded (segmented) output.
 
-    algorithm: "standard" or "enhanced" (the proposed ESMA).
-               "enhanced_v2" is kept as an alias of "enhanced" for
-               older callers.
+    algorithm: "standard", "enhanced" (the revised ESMA), or
+               "enhanced_v2" (the ESMA before revision -- what the YOLO
+               detector's training data was preprocessed with).
 
     crop_borders=False keeps the output the SAME SIZE/framing as the
     input (only pixel intensities change, nothing is cropped) -- this
@@ -64,9 +75,7 @@ def sma_preprocess(image, algorithm="enhanced", d=4, N=30, T=150, seed=42,
     hist_source = autocrop_black_borders(gray) if crop_borders else gray
     prob = compute_histogram_prob(hist_source)
 
-    # both algorithms run with their own defaults (ESMA: k=5, LHS init,
-    # sorted thresholds, patience=20)
-    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed)
+    result = algo_fn(prob, d=d, N=N, T=T, lb=0, ub=255, seed=seed, **ALGO_KWARGS[algorithm])
 
     target = hist_source if crop_borders else gray
     segmented = apply_thresholds(target, result["thresholds"])

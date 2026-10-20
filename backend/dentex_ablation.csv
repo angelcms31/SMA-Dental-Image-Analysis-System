@@ -1,0 +1,16 @@
+group,configuration,hit_pct,mean_gap,mean_iterations,mean_runtime_ms,friedman_rank,ref_better,tie,ref_worse,wilcoxon_p
+Full,Revised ESMA (all three objectives),93.1,3.5304992744190266e-05,83.6,53.97,5.67,,,,
+Full,ESMA before revision,82.8,0.00012390533349126366,41.4,31.35,11.25,235,51,14,5.275997339439124e-37
+Baseline,Standard SMA,1.5,0.0046009804531532755,100.0,61.29,15.0,300,0,0,6.083559849691437e-51
+Objective 1,Single leader (k = 1),88.4,8.318844780035543e-05,79.6,51.61,8.22,129,146,25,5.0408426248940574e-17
+Objective 1,"Top-5, rank weights (before revision)",92.0,6.159780183072291e-05,82.2,52.31,6.34,79,172,49,0.0004347031406812198
+Objective 1,Averaged leaders (centroid),88.4,8.968916413450146e-05,77.6,47.84,7.59,111,154,35,4.8699955255411456e-11
+Objective 2,"Random init, no sorting, strict acceptance",88.7,6.661242972290833e-05,83.1,53.36,8.21,146,117,37,2.6361429126379346e-12
+Objective 2,"LHS, no sorting, strict acceptance",88.3,7.741039905048849e-05,83.2,53.2,8.32,151,124,25,4.05321158292034e-18
+Objective 2,Random init + sorting + equal-fitness moves,93.4,3.718863172102675e-05,83.3,53.69,5.48,51,182,67,0.2486897191258597
+Objective 2,"LHS + sorting, strict acceptance (before revision)",89.7,4.651844252652104e-05,83.0,52.99,7.61,129,145,26,1.8549434879215188e-13
+Objective 3,"Success rule, no early stopping (full T)",94.0,2.844314887193278e-05,100.0,62.98,5.08,28,206,66,0.014000485762704297
+Objective 3,"Success rule, early stopping without kick",89.0,7.554547513892077e-05,63.3,41.94,8.44,150,150,0,2.2996057560669792e-26
+Objective 3,CR/PD rule + early stopping (before revision),84.0,9.535429994880692e-05,43.9,33.08,10.52,215,67,18,6.230579182793054e-30
+Objective 3,"Fixed a = 1, full T",93.1,4.21924926453574e-05,100.0,67.95,5.72,67,170,63,0.6726911458928613
+Objective 3,Fixed a = 1 + early stopping with kick,91.7,4.712357773742563e-05,69.8,49.14,6.57,91,152,57,0.008504863122989403

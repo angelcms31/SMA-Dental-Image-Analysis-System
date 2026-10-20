@@ -4,3 +4,7 @@ python-multipart
 numpy
 opencv-python-headless
 scikit-image
+# pinned to the versions the saved models were made with
+scikit-learn==1.9.0
+joblib==1.5.3
+ultralytics==8.4.133

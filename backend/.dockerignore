@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.deps_installed
+tests/
+runs/
+yolo_dataset*/
+mendeley_label_check/
+models_final/
+*.csv
+*.png
+dentex_report*.txt
+yolov8n.pt

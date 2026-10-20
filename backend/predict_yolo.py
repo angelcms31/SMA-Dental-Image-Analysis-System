@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 
 from sma_preprocess import sma_preprocess
+from overlay import _detect_dental_arch_band
 
 # Colored by DIAGNOSIS TYPE (not quadrant) so a finding's severity/category
 # is identifiable at a glance -- kept consistent with the frontend legend
@@ -101,7 +102,11 @@ def run_yolo_detection(image_bgr, weights_path, conf_thresh=0.25, iou_thresh=0.3
         )
 
     h, w = image_bgr.shape[:2]
-    x_mid, y_mid = w / 2.0, h / 2.0
+    # split upper/lower at the middle of the detected tooth row (close to the
+    # occlusal plane), not at the middle of the whole image -- same method as overlay.py
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY) if image_bgr.ndim == 3 else image_bgr
+    y0, y1 = _detect_dental_arch_band(gray, int(w * 0.03), int(w * 0.97))
+    x_mid, y_mid = w / 2.0, (y0 + y1) / 2.0
 
     results = model.predict(detect_input, conf=conf_thresh, verbose=False)[0]
     class_names = results.names
