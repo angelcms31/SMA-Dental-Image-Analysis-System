@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from './api';
 
 // ---------------------------------------------------------------------
 // AlgorithmSimulation.tsx
@@ -446,7 +447,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 export default function AlgorithmSimulation({
   onClose,
   selectedFile,
-  apiBase = 'http://localhost:8000',
+  apiBase = API_BASE,
 }: {
   onClose?: () => void;
   selectedFile: File | null;
