@@ -81,6 +81,7 @@ export default function OpgAnalyzer() {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [showSimulation, setShowSimulation] = useState<boolean>(false);
   const [crosshair, setCrosshair] = useState<CrossPos>(null);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const [results, setResults] = useState<Record<AlgoTab, AnalyzeResult | null>>({
     standard: null,
@@ -192,6 +193,38 @@ export default function OpgAnalyzer() {
 
   const findingsImage =
     currentResult?.status === 'success' ? currentResult.annotated_image ?? null : null;
+
+  const fileBase = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, '') : 'opg';
+
+  const downloadFindingsImage = () => {
+    if (!findingsImage) return;
+    triggerDownload(findingsImage, `${fileBase}_${activeTab === 'enhanced' ? 'esma' : 'standard'}_findings.png`);
+  };
+
+  const downloadReportPdf = async () => {
+    if (!originalPreview) return;
+    setIsExporting(true);
+    try {
+      // loaded on demand so jsPDF doesn't slow down the first page load
+      const { downloadPdfReport } = await import('./report');
+      await downloadPdfReport(
+        {
+          fileName: selectedFile?.name ?? 'opg',
+          imageDims,
+          originalUrl: originalPreview,
+          standard: results.standard,
+          enhanced: results.enhanced,
+          quadrantLabels: QUADRANT_LABELS,
+        },
+        `${fileBase}_report.pdf`
+      );
+    } catch (error) {
+      console.error('Error creating PDF report:', error);
+      alert('Hindi nagawa ang PDF report. Subukan ulit.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F3F7F9] text-[#0F2738] font-['Figtree',sans-serif] pb-16">
@@ -305,6 +338,7 @@ export default function OpgAnalyzer() {
             title={`Findings — ${meta.short}`}
             right={findingsImage && !isProcessing ? `${regions.length} findings` : undefined}
             onExpand={findingsImage && !isProcessing ? () => setFullscreenImage(findingsImage) : undefined}
+            onDownload={findingsImage && !isProcessing ? downloadFindingsImage : undefined}
             footer={
               !isProcessing && regions.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
@@ -348,6 +382,17 @@ export default function OpgAnalyzer() {
         <section className={`${CARD} p-5 flex flex-col gap-3.5`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className={`text-[17px] font-semibold ${FONT_HEAD}`}>Results · {meta.label}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={downloadReportPdf}
+              disabled={!anyDone || isProcessing || isExporting}
+              className="min-h-[38px] px-3.5 rounded-full border border-[#DCE6EC] text-[13px] font-semibold
+                         inline-flex items-center gap-2 hover:bg-[#EAF1F5]
+                         disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              <DownloadIcon />
+              {isExporting ? 'Creating PDF…' : 'Download report (PDF)'}
+            </button>
             <div className="inline-flex bg-[#EAF1F5] rounded-full p-[3px] gap-0.5" role="tablist">
               {(['findings', 'metrics'] as const).map((v) => (
                 <button
@@ -362,6 +407,7 @@ export default function OpgAnalyzer() {
                   {v}
                 </button>
               ))}
+            </div>
             </div>
           </div>
 
@@ -539,16 +585,36 @@ function ToothIcon() {
   );
 }
 
+function DownloadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+    </svg>
+  );
+}
+
+function triggerDownload(href: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function Frame({
   title,
   right,
   onExpand,
+  onDownload,
   footer,
   children,
 }: {
   title: string;
   right?: string;
   onExpand?: () => void;
+  onDownload?: () => void;
   footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -558,6 +624,16 @@ function Frame({
         <span className="text-[11px] font-semibold tracking-[0.11em] uppercase text-[#4F6979]">{title}</span>
         <span className="flex items-center gap-2.5 text-xs text-[#4F6979]">
           {right}
+          {onDownload && (
+            <button
+              onClick={onDownload}
+              aria-label={`Download ${title} image`}
+              title="Download image (PNG)"
+              className="w-9 h-9 rounded-lg border border-[#DCE6EC] inline-flex items-center justify-center hover:bg-[#EAF1F5]"
+            >
+              <DownloadIcon />
+            </button>
+          )}
           <button
             onClick={onExpand}
             disabled={!onExpand}
