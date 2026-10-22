@@ -262,14 +262,112 @@ function ArrowIcon() {
   );
 }
 
-// Glassy tooth with an orbit ring and two floating cards for the algorithms,
-// standing in for the 3D render in the reference design.
+// 4-point sparkle centered on (0, 0)
+const sparkle = (r: number) =>
+  `M0,${-r} L${r * 0.22},${-r * 0.22} L${r},0 L${r * 0.22},${r * 0.22} L0,${r} L${-r * 0.22},${r * 0.22} L${-r},0 L${-r * 0.22},${-r * 0.22}Z`;
+
+// Orbits wrap around the tooth: the full ring is drawn behind it, and the
+// near (lower) half is drawn again in front of it.
+const OUTER = { cx: 200, cy: 210, rx: 185, ry: 50, tilt: 10 };
+const INNER = { cx: 200, cy: 185, rx: 150, ry: 38, tilt: -14 };
+type Orbit = typeof OUTER;
+
+const ringPath = (o: Orbit) =>
+  `M${o.cx - o.rx},${o.cy} a${o.rx},${o.ry} 0 1,0 ${2 * o.rx},0 a${o.rx},${o.ry} 0 1,0 ${-2 * o.rx},0`;
+// lower arc only (sweep 0 goes through the bottom in SVG's y-down space)
+const frontArcPath = (o: Orbit) => `M${o.cx - o.rx},${o.cy} A${o.rx},${o.ry} 0 0,0 ${o.cx + o.rx},${o.cy}`;
+const tiltOf = (o: Orbit) => (o.tilt ? `rotate(${o.tilt} ${o.cx} ${o.cy})` : undefined);
+
+// Glowing "search agents" that travel the orbits, a nod to the slime mould
+// population. With reduced motion they sit still at angle `still` (degrees).
+const AGENTS: { orbit: Orbit; r: number; color: string; dur: number; begin: number; still: number }[] = [
+  { orbit: OUTER, r: 5, color: '#34D399', dur: 14, begin: 0, still: 160 },
+  { orbit: OUTER, r: 4.5, color: '#22D3EE', dur: 14, begin: -4.7, still: 60 },
+  { orbit: OUTER, r: 5, color: '#E39446', dur: 14, begin: -9.3, still: 330 },
+  { orbit: INNER, r: 4, color: '#2DD4BF', dur: 10, begin: -2, still: 120 },
+  { orbit: INNER, r: 4, color: '#E39446', dur: 10, begin: -7, still: 250 },
+];
+
+const SPARKLES: { x: number; y: number; r: number; delay: string }[] = [
+  { x: 70, y: 70, r: 7, delay: '0s' },
+  { x: 340, y: 95, r: 9, delay: '0.8s' },
+  { x: 365, y: 300, r: 6, delay: '1.6s' },
+  { x: 45, y: 300, r: 5, delay: '2.2s' },
+  { x: 290, y: 40, r: 4, delay: '1.2s' },
+];
+
+// Glassy tooth wrapped by two orbit rings with travelling agents, plus a glow
+// halo and sparkles, standing in for the 3D render in the reference design.
 function HeroVisual() {
+  const reduceMotion =
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // front = only the part of each agent's path that passes in front of the tooth
+  const agents = (front: boolean) =>
+    AGENTS.map((a, i) => {
+      const o = a.orbit;
+      const dot = reduceMotion ? (
+        <circle
+          cx={o.cx + o.rx * Math.cos((a.still * Math.PI) / 180)}
+          cy={o.cy + o.ry * Math.sin((a.still * Math.PI) / 180)}
+          r={a.r}
+          fill={a.color}
+          filter="url(#agent-glow)"
+        />
+      ) : (
+        <circle r={a.r} fill={a.color} filter="url(#agent-glow)">
+          <animateMotion dur={`${a.dur}s`} begin={`${a.begin}s`} repeatCount="indefinite" path={ringPath(o)} />
+        </circle>
+      );
+      return (
+        <g key={i} transform={tiltOf(o)}>
+          <g clipPath={front ? `url(#front-${o === OUTER ? 'outer' : 'inner'})` : undefined}>{dot}</g>
+        </g>
+      );
+    });
+
   return (
     <div className="relative min-h-[320px] sm:min-h-[440px] flex items-center justify-center" aria-hidden="true">
-      <svg viewBox="0 0 400 360" className="absolute inset-0 w-full h-full">
-        <ellipse cx="200" cy="215" rx="185" ry="48" fill="none" stroke="white" strokeOpacity="0.6" strokeWidth="1.2" />
+      {/* back layer: halo, far side of the rings, all agents, sparkles */}
+      <svg viewBox="0 0 400 360" className="absolute inset-0 w-full h-full overflow-visible">
+        <defs>
+          <radialGradient id="hero-halo">
+            <stop offset="0" stopColor="#6EE7B7" stopOpacity="0.55" />
+            <stop offset="0.45" stopColor="#34D399" stopOpacity="0.18" />
+            <stop offset="1" stopColor="#34D399" stopOpacity="0" />
+          </radialGradient>
+          <filter id="agent-glow" x="-200%" y="-200%" width="500%" height="500%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        <circle cx="200" cy="175" r="165" fill="url(#hero-halo)" />
+
+        <g transform={tiltOf(OUTER)}>
+          <path d={ringPath(OUTER)} fill="none" stroke="#34D399" strokeOpacity="0.45" strokeWidth="1.6" />
+        </g>
+        <g transform={tiltOf(INNER)}>
+          <path d={ringPath(INNER)} fill="none" stroke="#2DD4BF" strokeOpacity="0.4" strokeWidth="1.3" strokeDasharray="4 6" />
+        </g>
+
+        {agents(false)}
+
+        {SPARKLES.map((sp, i) => (
+          <path
+            key={i}
+            d={sparkle(sp.r)}
+            transform={`translate(${sp.x} ${sp.y})`}
+            fill="#ECFDF5"
+            className="motion-safe:animate-pulse"
+            style={{ animationDelay: sp.delay, animationDuration: '3s' }}
+          />
+        ))}
       </svg>
+
       <svg viewBox="0 0 24 24" className="relative w-[230px] sm:w-[300px] lg:w-[340px] drop-shadow-[0_30px_40px_rgba(15,90,80,0.3)]">
         <defs>
           <linearGradient id="tooth-fill" x1="0" y1="0" x2="1" y2="1">
@@ -291,20 +389,27 @@ function HeroVisual() {
         <path d="M6.2 4.6c-1.4.4-2 1.7-2 3 0 .9.3 1.7.6 2.4.5-2.2 1.6-4 3.3-5-.6-.4-1.2-.5-1.9-.4z" fill="url(#tooth-shine)" />
       </svg>
 
-      <FloatCard className="left-0 sm:left-2 top-[18%]" color="#0F766E" title="Standard SMA" sub="Single leader search" />
-      <FloatCard className="right-0 sm:right-2 bottom-[16%]" color="#E39446" title="ESMA" sub="Multi-leader + adaptive" />
-    </div>
-  );
-}
+      {/* front layer: near half of each ring and the agents passing in front of the tooth */}
+      <svg viewBox="0 0 400 360" className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
+        <defs>
+          {/* clip to below each ring's center line, in the ring's own (tilted) space */}
+          <clipPath id="front-outer" clipPathUnits="userSpaceOnUse">
+            <rect x="-100" y={OUTER.cy} width="600" height="400" />
+          </clipPath>
+          <clipPath id="front-inner" clipPathUnits="userSpaceOnUse">
+            <rect x="-100" y={INNER.cy} width="600" height="400" />
+          </clipPath>
+        </defs>
 
-function FloatCard({ className, color, title, sub }: { className: string; color: string; title: string; sub: string }) {
-  return (
-    <div className={`absolute ${className} rounded-xl bg-glass backdrop-blur px-3 py-2 border border-[var(--neu-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_12px_26px_rgba(15,90,80,0.2)]`}>
-      <p className="flex items-center gap-1.5 text-[12px] font-semibold">
-        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-        {title}
-      </p>
-      <p className="text-[10.5px] text-muted mt-0.5">{sub}</p>
+        <g transform={tiltOf(OUTER)}>
+          <path d={frontArcPath(OUTER)} fill="none" stroke="#10B981" strokeWidth="2.2" filter="url(#agent-glow)" />
+        </g>
+        <g transform={tiltOf(INNER)}>
+          <path d={frontArcPath(INNER)} fill="none" stroke="#14B8A6" strokeWidth="1.8" strokeDasharray="4 6" filter="url(#agent-glow)" />
+        </g>
+
+        {agents(true)}
+      </svg>
     </div>
   );
 }
