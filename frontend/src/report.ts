@@ -35,10 +35,10 @@ const MARGIN = 15;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const BOTTOM = PAGE_H - 18;
 
-const INK: [number, number, number] = [15, 39, 56];
-const MUTED: [number, number, number] = [79, 105, 121];
-const LINE: [number, number, number] = [220, 230, 236];
-const BLUE: [number, number, number] = [31, 122, 163];
+const INK: [number, number, number] = [31, 41, 55];
+const MUTED: [number, number, number] = [78, 97, 91];
+const LINE: [number, number, number] = [211, 236, 221];
+const TEAL: [number, number, number] = [15, 118, 110];
 const ORANGE: [number, number, number] = [200, 113, 31];
 
 // Re-encode as JPEG (and cap the width) so a 3 MB PNG X-ray doesn't
@@ -99,7 +99,7 @@ export async function downloadPdfReport(input: ReportInput, outName: string): Pr
   };
 
   // ---- header ----
-  doc.setFillColor(...BLUE);
+  doc.setFillColor(...TEAL);
   doc.rect(0, 0, PAGE_W, 4, 'F');
   y += 2;
   doc.setFont('helvetica', 'bold');
@@ -136,7 +136,7 @@ export async function downloadPdfReport(input: ReportInput, outName: string): Pr
   // ---- images ----
   await addImage(originalUrl, 'Original OPG');
   if (standard?.status === 'success' && standard.annotated_image) {
-    await addImage(standard.annotated_image, 'Findings - Standard SMA', BLUE);
+    await addImage(standard.annotated_image, 'Findings - Standard SMA', TEAL);
   }
   if (enhanced?.status === 'success' && enhanced.annotated_image) {
     await addImage(enhanced.annotated_image, 'Findings - Enhanced SMA (ESMA)', ORANGE);

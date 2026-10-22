@@ -1,3 +1,263 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Theme tokens. Tailwind colors in tailwind.config.js point at these, and
+   the `dark` class on <html> (set by the navbar toggle) swaps them. */
+:root {
+  /* Palette: #0F766E teal · #34D399 mint · #BBF7D0 light mint · #F0FDF4 mint white · #1F2937 charcoal */
+  --bg: #F0FDF4;
+  --surface: #FFFFFF;
+  --subtle: #E2F7EA;
+  --sunken: #F6FDF9;
+  --line: #D3ECDD;
+  --line-strong: #A9DCC0;
+  --ink: #1F2937;
+  --muted: #4E615B;
+  --muted-2: #364740;
+  --faint: #7F928C;
+  --link: #0F766E;
+  --btn: #0F766E;
+  --btn-fg: #FFFFFF;
+  --btn-hover: #0B5D57;
+  --glass: rgba(255, 255, 255, 0.85);
+  --glass-soft: rgba(255, 255, 255, 0.35);
+  --glass-line: rgba(255, 255, 255, 0.6);
+  --hero-from: #F0FDF4;
+  --hero-via: #D3F9E1;
+  --hero-to: #9BE8C3;
+  --hero-hl: #0F766E;
+  --hl-from: #0F766E;
+  --hl-to: #19A383;
+  --watermark: rgba(255, 255, 255, 0.4);
+  --warn-bg: #FFF8EC;
+  --warn-line: #F1DDB8;
+  --warn-ink: #6D4A12;
+  --danger: #C2412D;
+  --card-shadow: 0 12px 32px rgba(15, 60, 50, 0.08);
+  --how-bg: #1F2937;
+  --how-card: #283546;
+  --how-art-from: #145E58;
+  --how-art-to: #222F3F;
+  --how-icon: #BBF7D0;
+  --stage: #111A22;
+  /* neumorphism: surfaces share the page color, lit from the top-left */
+  --neu-hi: rgba(250, 255, 252, 0.84);
+  --neu-lo: rgba(228, 245, 234, 0.84);
+  --neu-inset-bg: rgba(226, 244, 233, 0.78);
+  --neu-light: rgba(255, 255, 255, 0.95);
+  --neu-dark: rgba(15, 118, 110, 0.17);
+  --neu-edge: rgba(255, 255, 255, 0.7);
+  color-scheme: light;
+}
+
+:root.dark {
+  --bg: #1F2937;
+  --surface: #263345;
+  --subtle: #2E3D50;
+  --sunken: #222E3E;
+  --line: #36465A;
+  --line-strong: #4A5B6E;
+  --ink: #F0FDF4;
+  --muted: #B4C6BF;
+  --muted-2: #D2E3DB;
+  --faint: #8B9D97;
+  --link: #34D399;
+  --btn: #34D399;
+  --btn-fg: #0D2B26;
+  --btn-hover: #6EE7B7;
+  --glass: rgba(38, 51, 69, 0.85);
+  --glass-soft: rgba(31, 41, 55, 0.35);
+  --glass-line: rgba(255, 255, 255, 0.12);
+  --hero-from: #1F2937;
+  --hero-via: #1B3D3E;
+  --hero-to: #0F766E;
+  --hero-hl: #34D399;
+  --hl-from: #34D399;
+  --hl-to: #BBF7D0;
+  --watermark: rgba(255, 255, 255, 0.06);
+  --warn-bg: #33291A;
+  --warn-line: #5C4A27;
+  --warn-ink: #F2D7A6;
+  --danger: #FF9C88;
+  --card-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  --how-bg: #263345;
+  --how-card: #2F3E52;
+  --how-art-from: #0F766E;
+  --how-art-to: #24384A;
+  --how-icon: #BBF7D0;
+  --stage: #141C26;
+  --neu-hi: rgba(33, 46, 58, 0.8);
+  --neu-lo: rgba(20, 30, 38, 0.8);
+  --neu-inset-bg: rgba(12, 22, 26, 0.6);
+  --neu-light: rgba(52, 211, 153, 0.07);
+  --neu-dark: rgba(0, 0, 0, 0.45);
+  --neu-edge: rgba(255, 255, 255, 0.05);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+}
+
+/* Neumorphic + skeuomorphic surfaces.
+   .neu / .neu-sm   raised soft box (cards, chips, small buttons)
+   .neu-inset       pressed-in well (empty screens, toggles, list rows)
+   .neu-btn         glossy, physical-looking button that presses in on click */
+@layer components {
+  .neu {
+    background: linear-gradient(145deg, var(--neu-hi), var(--neu-lo));
+    border: 1px solid var(--neu-edge);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: 9px 9px 22px var(--neu-dark), -9px -9px 22px var(--neu-light),
+      inset 0 1px 0 var(--neu-edge);
+  }
+  .neu-sm {
+    background: linear-gradient(145deg, var(--neu-hi), var(--neu-lo));
+    border: 1px solid var(--neu-edge);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    box-shadow: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
+  }
+  .neu-inset {
+    background: var(--neu-inset-bg);
+    box-shadow: inset 5px 5px 12px var(--neu-dark), inset -5px -5px 12px var(--neu-light);
+  }
+  .neu-btn {
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(0, 0, 0, 0.1));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -2px 0 rgba(0, 0, 0, 0.12),
+      4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
+    transition: box-shadow 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+  }
+  .neu-sm:not(div):not(li):not(span):active:not(:disabled),
+  .neu-btn:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.22), inset -2px -2px 6px var(--neu-light);
+  }
+  .neu-btn:disabled {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 2px 2px 6px var(--neu-dark);
+  }
+}
+
+/* Green nebula backdrop for the landing hero, drawn entirely in CSS:
+   glowing teal/mint clouds over deep green-black, plus two tiled star
+   fields; the ::before layer twinkles slowly. */
+.nebula {
+  background:
+    radial-gradient(ellipse 55% 45% at 18% 55%, rgba(110, 231, 183, 0.55), transparent 70%),
+    radial-gradient(ellipse 30% 22% at 30% 48%, rgba(220, 255, 240, 0.35), transparent 70%),
+    radial-gradient(ellipse 45% 38% at 78% 80%, rgba(34, 197, 94, 0.5), transparent 70%),
+    radial-gradient(ellipse 35% 30% at 55% 62%, rgba(52, 211, 153, 0.35), transparent 70%),
+    radial-gradient(ellipse 30% 25% at 45% 35%, rgba(56, 120, 200, 0.22), transparent 70%),
+    radial-gradient(ellipse 40% 35% at 85% 18%, rgba(15, 118, 110, 0.45), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 20% 10%, rgba(21, 128, 61, 0.4), transparent 70%),
+    linear-gradient(160deg, #03130E 0%, #072A1F 40%, #04180F 75%, #020B07 100%);
+}
+.nebula::before,
+.nebula::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.nebula::before {
+  background-image:
+    radial-gradient(1.6px 1.6px at 23px 41px, rgba(255, 255, 255, 0.95) 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 87px 13px, rgba(187, 247, 208, 0.9) 50%, transparent 52%),
+    radial-gradient(2px 2px at 141px 98px, rgba(255, 255, 255, 0.9) 50%, transparent 52%),
+    radial-gradient(1px 1px at 59px 127px, rgba(255, 255, 255, 0.8) 50%, transparent 52%),
+    radial-gradient(1.4px 1.4px at 176px 57px, rgba(167, 243, 208, 0.9) 50%, transparent 52%);
+  background-size: 200px 160px;
+  animation: nebula-twinkle 5s ease-in-out infinite alternate;
+}
+.nebula::after {
+  background-image:
+    radial-gradient(1px 1px at 37px 71px, rgba(255, 255, 255, 0.7) 50%, transparent 52%),
+    radial-gradient(1px 1px at 113px 29px, rgba(255, 255, 255, 0.6) 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 251px 143px, rgba(187, 247, 208, 0.7) 50%, transparent 52%),
+    radial-gradient(0.8px 0.8px at 197px 211px, rgba(255, 255, 255, 0.6) 50%, transparent 52%);
+  background-size: 290px 240px;
+  /* soft haze so the stars fade toward the edges like the reference */
+  -webkit-mask-image: radial-gradient(ellipse at 40% 55%, #000 30%, rgba(0, 0, 0, 0.35) 80%);
+  mask-image: radial-gradient(ellipse at 40% 55%, #000 30%, rgba(0, 0, 0, 0.35) 80%);
+}
+@keyframes nebula-twinkle {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nebula::before { animation: none; }
+}
+
+/* Page-wide galaxy backdrop (fixed, so boxes scroll over it). Light mode is a
+   pale mint nebula with teal stars; dark mode a deep green nebula with white
+   stars, so text outside the boxes stays readable in both. */
+.galaxy-bg {
+  position: relative;
+  isolation: isolate;
+  --gx-base: linear-gradient(160deg, #E6FBF0 0%, #CFF6E0 40%, #E9FCF2 70%, #D6F7E6 100%);
+  --gx-c1: rgba(52, 211, 153, 0.5);
+  --gx-c2: rgba(167, 243, 208, 0.95);
+  --gx-c3: rgba(15, 118, 110, 0.3);
+  --gx-c4: rgba(56, 189, 248, 0.22);
+  --gx-star: rgba(15, 118, 110, 0.75);
+  --gx-star-2: rgba(16, 185, 129, 0.6);
+}
+:root.dark .galaxy-bg {
+  --gx-base: linear-gradient(160deg, #04110D 0%, #0A2019 45%, #071712 75%, #030B08 100%);
+  --gx-c1: rgba(52, 211, 153, 0.22);
+  --gx-c2: rgba(34, 197, 94, 0.16);
+  --gx-c3: rgba(15, 118, 110, 0.35);
+  --gx-c4: rgba(56, 120, 200, 0.12);
+  --gx-star: rgba(255, 255, 255, 0.85);
+  --gx-star-2: rgba(187, 247, 208, 0.6);
+}
+.galaxy-bg::before,
+.galaxy-bg::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.galaxy-bg::before {
+  inset: -8%;
+  background:
+    radial-gradient(ellipse 50% 40% at 12% 30%, var(--gx-c1), transparent 70%),
+    radial-gradient(ellipse 40% 35% at 85% 75%, var(--gx-c1), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 60% 20%, var(--gx-c2), transparent 70%),
+    radial-gradient(ellipse 35% 30% at 30% 85%, var(--gx-c3), transparent 70%),
+    radial-gradient(ellipse 38% 28% at 72% 48%, var(--gx-c4), transparent 70%),
+    radial-gradient(ellipse 25% 20% at 45% 60%, var(--gx-c3), transparent 70%),
+    radial-gradient(ellipse 30% 22% at 95% 10%, var(--gx-c4), transparent 70%),
+    var(--gx-base);
+  animation: galaxy-drift 40s ease-in-out infinite alternate;
+  /* softened so the page backdrop stays behind the content (the hero's own
+     .nebula is left sharp) */
+  filter: blur(14px);
+}
+@keyframes galaxy-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-3%, 2%, 0) scale(1.06); }
+}
+.galaxy-bg::after {
+  background-image:
+    radial-gradient(1.4px 1.4px at 23px 41px, var(--gx-star) 50%, transparent 52%),
+    radial-gradient(1px 1px at 87px 113px, var(--gx-star-2) 50%, transparent 52%),
+    radial-gradient(1.8px 1.8px at 161px 68px, var(--gx-star) 50%, transparent 52%),
+    radial-gradient(1px 1px at 219px 187px, var(--gx-star-2) 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 293px 21px, var(--gx-star) 50%, transparent 52%),
+    radial-gradient(2.4px 2.4px at 131px 201px, var(--gx-star) 45%, transparent 55%),
+    radial-gradient(1.6px 1.6px at 251px 133px, var(--gx-star-2) 50%, transparent 52%),
+    radial-gradient(1px 1px at 59px 167px, var(--gx-star) 50%, transparent 52%);
+  background-size: 320px 240px;
+  filter: blur(1.2px);
+  animation: nebula-twinkle 6s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .galaxy-bg::before,
+  .galaxy-bg::after { animation: none; }
+}
+/* keep nebula content above its star layers */
+.nebula > :not(.absolute) { position: relative; z-index: 1; }
