@@ -437,9 +437,9 @@ function drawConvergence(canvas: HTMLCanvasElement, std: number[], esma: number[
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-slate-50 rounded-lg px-3 py-2">
+    <div className="bg-slate-50 dark:bg-sunken rounded-lg px-3 py-2">
       <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-sm font-semibold text-slate-700">{value}</p>
+      <p className="text-sm font-semibold text-slate-700 dark:text-ink">{value}</p>
     </div>
   );
 }
@@ -608,7 +608,7 @@ export default function AlgorithmSimulation({
     <button
       onClick={() => setView(key)}
       className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
-        view === key ? 'text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
+        view === key ? 'text-white shadow-sm' : 'text-slate-500 dark:text-muted hover:text-slate-700'
       }`}
       style={view === key ? { backgroundColor: '#3A5661' } : undefined}
     >
@@ -619,12 +619,12 @@ export default function AlgorithmSimulation({
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-6 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6">
+      <div className="bg-white dark:bg-surface rounded-2xl shadow-2xl max-w-4xl w-full p-6">
         <div className="flex items-center justify-between mb-1">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-slate-800">Algorithm Simulation</h2>
-              <span className="text-[10px] font-semibold uppercase tracking-wide bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5">
+              <h2 className="text-lg font-semibold text-slate-800 dark:text-ink">Algorithm Simulation</h2>
+              <span className="text-[10px] font-semibold uppercase tracking-wide bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-full px-2 py-0.5">
                 Live backend run
               </span>
             </div>
@@ -640,20 +640,20 @@ export default function AlgorithmSimulation({
         </div>
 
         {!selectedFile && (
-          <div className="mt-6 mb-2 text-center py-10 border border-dashed border-slate-200 rounded-xl">
-            <p className="text-sm text-slate-500">Upload an OPG image in the analyzer first.</p>
+          <div className="mt-6 mb-2 text-center py-10 border border-dashed border-slate-200 dark:border-line rounded-xl">
+            <p className="text-sm text-slate-500 dark:text-muted">Upload an OPG image in the analyzer first.</p>
             <p className="text-xs text-slate-400 mt-1">The simulation runs the real algorithms on that image.</p>
           </div>
         )}
 
         {selectedFile && status === 'loading' && (
           <div className="mt-6 mb-2 text-center py-10">
-            <p className="text-sm text-slate-500">Running Standard SMA and ESMA on your image (N={N}, T={T})…</p>
+            <p className="text-sm text-slate-500 dark:text-muted">Running Standard SMA and ESMA on your image (N={N}, T={T})…</p>
           </div>
         )}
 
         {status === 'error' && (
-          <div className="mt-4 mb-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          <div className="mt-4 mb-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-sm rounded-xl px-4 py-3">
             <p className="font-medium mb-1">Couldn&apos;t run the live simulation.</p>
             <p className="text-xs">{errorMsg}</p>
             <button onClick={runSimulation} className="mt-3 text-xs font-medium text-white px-4 py-1.5 rounded-full" style={{ backgroundColor: '#3A5661' }}>
@@ -664,12 +664,12 @@ export default function AlgorithmSimulation({
 
         {status === 'done' && std && esma && optimum && (
           <>
-            <div className="flex flex-wrap items-center gap-2 mt-4 mb-3 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-2 mt-4 mb-3 text-xs text-slate-500 dark:text-muted">
               <label className="flex items-center gap-1">
                 seed
-                <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} className="w-20 border border-slate-200 rounded px-1.5 py-0.5" />
+                <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} className="w-20 border border-slate-200 dark:border-line rounded px-1.5 py-0.5" />
               </label>
-              <button onClick={() => setSeed(100 + Math.floor(Math.random() * 900))} className="border border-slate-200 rounded-full px-3 py-1 hover:bg-slate-50">
+              <button onClick={() => setSeed(100 + Math.floor(Math.random() * 900))} className="border border-slate-200 dark:border-line rounded-full px-3 py-1 hover:bg-slate-50">
                 Randomize seed
               </button>
               <button onClick={runSimulation} className="text-white rounded-full px-3 py-1 font-medium" style={{ backgroundColor: '#3A5661' }}>
@@ -692,7 +692,7 @@ export default function AlgorithmSimulation({
                   setIter((i) => Math.min(maxIter, i + 1));
                 }}
                 disabled={iter >= maxIter}
-                className="px-4 py-2 rounded-full font-medium text-sm border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                className="px-4 py-2 rounded-full font-medium text-sm border border-slate-300 dark:border-line-strong text-slate-600 dark:text-muted hover:bg-slate-50 disabled:opacity-40"
               >
                 Step
               </button>
@@ -701,16 +701,16 @@ export default function AlgorithmSimulation({
                   setRunning(false);
                   setIter(0);
                 }}
-                className="px-4 py-2 rounded-full font-medium text-sm border border-slate-300 text-slate-600 hover:bg-slate-50"
+                className="px-4 py-2 rounded-full font-medium text-sm border border-slate-300 dark:border-line-strong text-slate-600 dark:text-muted hover:bg-slate-50"
               >
                 Reset
               </button>
-              <span className="text-sm text-slate-500 ml-auto">
+              <span className="text-sm text-slate-500 dark:text-muted ml-auto">
                 Iteration {iter} / {maxIter}
               </span>
             </div>
 
-            <div className="inline-flex bg-slate-100 rounded-full p-1 gap-1 mb-4">
+            <div className="inline-flex bg-slate-100 dark:bg-subtle rounded-full p-1 gap-1 mb-4">
               {tabBtn('agents', 'Agents')}
               {tabBtn('chart', 'Convergence')}
               {tabBtn('images', 'Segmented Result')}
@@ -728,7 +728,7 @@ export default function AlgorithmSimulation({
                         best: {stdBest.toFixed(3)} &middot; a(t) = {std.a_trace[iter].toFixed(2)}
                       </span>
                     </div>
-                    <canvas ref={stdCanvas} width={PLOT} height={PLOT} className="w-full aspect-square rounded-lg border border-slate-200" />
+                    <canvas ref={stdCanvas} width={PLOT} height={PLOT} className="w-full aspect-square rounded-lg border border-slate-200 dark:border-line" />
                   </div>
 
                   <div>
@@ -741,25 +741,25 @@ export default function AlgorithmSimulation({
                         {esmaStopped ? ` \u00b7 stopped at ${esma.iterations_used}` : ''}
                       </span>
                     </div>
-                    <canvas ref={esmaCanvas} width={PLOT} height={PLOT} className="w-full aspect-square rounded-lg border border-slate-200" />
+                    <canvas ref={esmaCanvas} width={PLOT} height={PLOT} className="w-full aspect-square rounded-lg border border-slate-200 dark:border-line" />
                   </div>
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600">
+                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-subtle grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600 dark:text-muted">
                   <div className="flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: STANDARD_COLOR, opacity: 0.75, border: '1px solid #fff' }} />
-                    <span className="text-xs text-slate-600">Agent</span>
+                    <span className="text-xs text-slate-600 dark:text-muted">Agent</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="w-3.5 h-3.5 rounded-full shrink-0 border-2" style={{ borderColor: LEADER_COLOR }} />
-                    <span className="text-xs text-slate-600">Current leader(s)</span>
+                    <span className="text-xs text-slate-600 dark:text-muted">Current leader(s)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm shrink-0" style={{ color: STAR_COLOR }}>&#9733;</span>
-                    <span className="text-xs text-slate-600">True best answer</span>
+                    <span className="text-xs text-slate-600 dark:text-muted">True best answer</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-600">Darker area = higher entropy</span>
+                    <span className="text-xs text-slate-600 dark:text-muted">Darker area = higher entropy</span>
                   </div>
                 </div>
               </>
@@ -767,13 +767,13 @@ export default function AlgorithmSimulation({
 
             {view === 'chart' && (
               <>
-                <canvas ref={chartCanvas} width={CH_W} height={CH_H} className="w-full rounded-lg border border-slate-200" />
+                <canvas ref={chartCanvas} width={CH_W} height={CH_H} className="w-full rounded-lg border border-slate-200 dark:border-line" />
                 <div className="grid grid-cols-3 gap-3 mt-4">
                   <Stat label="SMA best (so far)" value={stdBest.toFixed(4)} />
                   <Stat label="ESMA best (so far)" value={esmaBest.toFixed(4)} />
                   <Stat label="Exact optimum" value={optimum.fitness.toFixed(4)} />
                 </div>
-                <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-slate-100 dark:border-subtle text-xs text-slate-500 dark:text-muted">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STANDARD_COLOR }} />
                     Standard SMA
@@ -795,13 +795,13 @@ export default function AlgorithmSimulation({
                 {data?.histogram && data?.input_image && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <p className="text-xs font-semibold mb-1.5 text-slate-600">Input image</p>
-                      <img src={data.input_image} alt="Input OPG" className="w-full rounded-lg border border-slate-200" />
+                      <p className="text-xs font-semibold mb-1.5 text-slate-600 dark:text-muted">Input image</p>
+                      <img src={data.input_image} alt="Input OPG" className="w-full rounded-lg border border-slate-200 dark:border-line" />
                     </div>
                     <div>
-                      <p className="text-xs font-semibold mb-1.5 text-slate-600">The histogram of image</p>
-                      <canvas ref={histCanvas} width={520} height={260} className="w-full rounded-lg border border-slate-200" />
-                      <p className="text-[11px] text-slate-500 mt-1">
+                      <p className="text-xs font-semibold mb-1.5 text-slate-600 dark:text-muted">The histogram of image</p>
+                      <canvas ref={histCanvas} width={520} height={260} className="w-full rounded-lg border border-slate-200 dark:border-line" />
+                      <p className="text-[11px] text-slate-500 dark:text-muted mt-1">
                         <span style={{ color: STANDARD_COLOR }}>- - -</span> SMA thresholds &nbsp;
                         <span style={{ color: ENHANCED_COLOR }}>——</span> ESMA thresholds
                       </p>
@@ -813,18 +813,18 @@ export default function AlgorithmSimulation({
                     <p className="text-xs font-semibold mb-1.5" style={{ color: STANDARD_COLOR }}>Standard SMA</p>
                     <div className="grid grid-cols-2 gap-2">
                       {std.segmented_color && (
-                        <img src={std.segmented_color} alt="Standard SMA segmentation (colour)" className="w-full rounded-lg border border-slate-200" />
+                        <img src={std.segmented_color} alt="Standard SMA segmentation (colour)" className="w-full rounded-lg border border-slate-200 dark:border-line" />
                       )}
-                      <img src={std.segmented_image} alt="Standard SMA segmentation" className="w-full rounded-lg border border-slate-200" />
+                      <img src={std.segmented_image} alt="Standard SMA segmentation" className="w-full rounded-lg border border-slate-200 dark:border-line" />
                     </div>
                   </div>
                   <div>
                     <p className="text-xs font-semibold mb-1.5" style={{ color: ENHANCED_COLOR }}>Enhanced SMA (ESMA)</p>
                     <div className="grid grid-cols-2 gap-2">
                       {esma.segmented_color && (
-                        <img src={esma.segmented_color} alt="ESMA segmentation (colour)" className="w-full rounded-lg border border-slate-200" />
+                        <img src={esma.segmented_color} alt="ESMA segmentation (colour)" className="w-full rounded-lg border border-slate-200 dark:border-line" />
                       )}
-                      <img src={esma.segmented_image} alt="ESMA segmentation" className="w-full rounded-lg border border-slate-200" />
+                      <img src={esma.segmented_image} alt="ESMA segmentation" className="w-full rounded-lg border border-slate-200 dark:border-line" />
                     </div>
                   </div>
                 </div>
