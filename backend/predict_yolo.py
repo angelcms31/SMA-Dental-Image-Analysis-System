@@ -203,7 +203,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_esma", action="store_true",
                          help="Apply SMA/ESMA preprocessing before detection -- REQUIRED if the "
                               "model was trained with --use_esma in dentex_to_yolo.py")
-    parser.add_argument("--sma_algorithm", choices=["standard", "enhanced"], default="enhanced",
+    parser.add_argument("--sma_algorithm", choices=["standard", "enhanced", "enhanced_v2"], default="enhanced",
                          help="Must match whichever algorithm preprocessed the training data")
     args = parser.parse_args()
 
