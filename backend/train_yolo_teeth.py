@@ -30,14 +30,16 @@ predict_yolo.py) and what you'll wire into the FastAPI backend.
 import argparse
 
 
-def main(data_yaml, epochs, imgsz, batch, model_size, device=None, run_name="train"):
+def main(data_yaml, epochs, imgsz, batch, model_size, device=None, run_name="train",
+         init_weights=None, lr0=None):
     import os
     from ultralytics import YOLO
 
     # yolov8n = nano (fastest, least accurate), yolov8s = small,
     # yolov8m = medium -- 'n' or 's' is a reasonable choice for a
     # ~700-image dataset; larger models need more data to avoid overfitting
-    model = YOLO(f"yolov8{model_size}.pt")
+    # init_weights: continue from an existing best.pt (fine-tune) instead of COCO
+    model = YOLO(init_weights or f"yolov8{model_size}.pt")
 
     # Using an ABSOLUTE path for project= avoids ultralytics silently
     # nesting this under its own default runs directory (which is what
@@ -58,6 +60,8 @@ def main(data_yaml, epochs, imgsz, batch, model_size, device=None, run_name="tra
     )
     if device is not None:
         train_kwargs["device"] = device
+    if lr0 is not None:
+        train_kwargs["lr0"] = lr0
 
     results = model.train(**train_kwargs)
 
@@ -88,5 +92,10 @@ if __name__ == "__main__":
                          help="Folder name under runs_yolo/ for this run's results -- use a "
                               "DIFFERENT name for each dataset (e.g. train_standard, "
                               "train_enhanced) so runs never collide with each other's files.")
+    parser.add_argument("--init_weights", default=None,
+                         help="Existing best.pt to fine-tune from. Unset = start from COCO yolov8{n,s,m}.pt.")
+    parser.add_argument("--lr0", type=float, default=None,
+                         help="Initial learning rate (ultralytics default 0.01); use ~0.002 when fine-tuning.")
     args = parser.parse_args()
-    main(args.data, args.epochs, args.imgsz, args.batch, args.model_size, args.device, args.run_name)
+    main(args.data, args.epochs, args.imgsz, args.batch, args.model_size, args.device, args.run_name,
+         args.init_weights, args.lr0)
