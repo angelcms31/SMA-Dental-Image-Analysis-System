@@ -22,7 +22,7 @@ export default function DisclaimerModal({ onAccept }: { onAccept: () => void }) 
         aria-labelledby="disclaimer-title"
         aria-describedby="disclaimer-body"
         className="w-full max-w-lg rounded-[24px] p-6 sm:p-7 bg-surface border border-line text-ink
-                   shadow-[0_24px_60px_rgba(0,0,0,0.35)] font-['Figtree',sans-serif]"
+                   shadow-[0_24px_60px_rgba(0,0,0,0.35)] font-['IBM_Plex_Sans',sans-serif]"
       >
         <div className="flex items-center gap-3">
           <span className="w-11 h-11 rounded-2xl bg-danger-bg border border-danger-line text-danger flex items-center justify-center shrink-0">
@@ -31,7 +31,7 @@ export default function DisclaimerModal({ onAccept }: { onAccept: () => void }) 
               <path d="M12 3L2 20h20L12 3zM12 10v4M12 17.5v.01" />
             </svg>
           </span>
-          <h2 id="disclaimer-title" className="text-[20px] font-semibold tracking-tight font-['Inter_Tight',sans-serif]">
+          <h2 id="disclaimer-title" className="text-[20px] font-bold tracking-tight font-['IBM_Plex_Sans',sans-serif]">
             This is not a medical diagnosis
           </h2>
         </div>
@@ -50,7 +50,7 @@ export default function DisclaimerModal({ onAccept }: { onAccept: () => void }) 
         <button
           ref={buttonRef}
           onClick={onAccept}
-          className="neu-btn mt-6 w-full min-h-[48px] rounded-xl bg-btn text-btn-fg text-[14.5px] font-semibold
+          className="neu-btn mt-6 w-full min-h-[48px] rounded-xl bg-btn text-btn-fg text-[16px] font-semibold
                      hover:bg-[var(--btn-hover)] transition-colors"
         >
           I understand, continue

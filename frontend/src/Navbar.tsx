@@ -14,7 +14,7 @@ export default function Navbar({ onNavigate, action }: { onNavigate: Navigate; a
           <span className="w-9 h-9 rounded-xl bg-btn text-btn-fg flex items-center justify-center">
             <ToothIcon />
           </span>
-          <span className="text-[17px] font-semibold tracking-tight font-['Inter_Tight',sans-serif]">ESMA Dental</span>
+          <span className="text-[17px] font-semibold tracking-tight font-['IBM_Plex_Sans',sans-serif]">ESMA Dental</span>
         </button>
         <div className="flex items-center gap-2">
           <ThemeToggle />

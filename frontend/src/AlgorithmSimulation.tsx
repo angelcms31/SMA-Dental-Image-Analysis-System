@@ -439,7 +439,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-slate-50 dark:bg-sunken rounded-lg px-3 py-2">
       <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-sm font-semibold text-slate-700 dark:text-ink">{value}</p>
+      <p className="text-[15px] font-semibold text-slate-700 dark:text-ink">{value}</p>
     </div>
   );
 }
@@ -607,7 +607,7 @@ export default function AlgorithmSimulation({
   const tabBtn = (key: View, label: string) => (
     <button
       onClick={() => setView(key)}
-      className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+      className={`px-4 py-1.5 rounded-full text-[16px] font-medium transition-all ${
         view === key ? 'text-white shadow-sm' : 'text-slate-500 dark:text-muted hover:text-slate-700'
       }`}
       style={view === key ? { backgroundColor: '#3A5661' } : undefined}
@@ -623,12 +623,12 @@ export default function AlgorithmSimulation({
         <div className="flex items-center justify-between mb-1">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-ink">Algorithm Simulation</h2>
+              <h2 className="text-lg font-bold text-slate-800 dark:text-ink">Algorithm Simulation</h2>
               <span className="text-[10px] font-semibold uppercase tracking-wide bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-full px-2 py-0.5">
                 Live backend run
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-[15px] text-slate-400 mt-0.5">
               Real run of both algorithms on your uploaded image.
             </p>
           </div>
@@ -641,22 +641,22 @@ export default function AlgorithmSimulation({
 
         {!selectedFile && (
           <div className="mt-6 mb-2 text-center py-10 border border-dashed border-slate-200 dark:border-line rounded-xl">
-            <p className="text-sm text-slate-500 dark:text-muted">Upload an OPG image in the analyzer first.</p>
-            <p className="text-xs text-slate-400 mt-1">The simulation runs the real algorithms on that image.</p>
+            <p className="text-[15px] text-slate-500 dark:text-muted">Upload an OPG image in the analyzer first.</p>
+            <p className="text-[15px] text-slate-400 mt-1">The simulation runs the real algorithms on that image.</p>
           </div>
         )}
 
         {selectedFile && status === 'loading' && (
           <div className="mt-6 mb-2 text-center py-10">
-            <p className="text-sm text-slate-500 dark:text-muted">Running Standard SMA and ESMA on your image (N={N}, T={T})…</p>
+            <p className="text-[15px] text-slate-500 dark:text-muted">Running Standard SMA and ESMA on your image (N={N}, T={T})…</p>
           </div>
         )}
 
         {status === 'error' && (
           <div className="mt-4 mb-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-sm rounded-xl px-4 py-3">
             <p className="font-medium mb-1">Couldn&apos;t run the live simulation.</p>
-            <p className="text-xs">{errorMsg}</p>
-            <button onClick={runSimulation} className="mt-3 text-xs font-medium text-white px-4 py-1.5 rounded-full" style={{ backgroundColor: '#3A5661' }}>
+            <p className="text-[15px]">{errorMsg}</p>
+            <button onClick={runSimulation} className="mt-3 text-[16px] font-medium text-white px-4 py-1.5 rounded-full" style={{ backgroundColor: '#3A5661' }}>
               Retry
             </button>
           </div>
@@ -681,7 +681,7 @@ export default function AlgorithmSimulation({
               <button
                 onClick={() => setRunning((r) => !r)}
                 disabled={iter >= maxIter}
-                className="text-white px-5 py-2 rounded-full font-medium text-sm disabled:opacity-40 transition-colors"
+                className="text-white px-5 py-2 rounded-full font-medium text-[16px] disabled:opacity-40 transition-colors"
                 style={{ backgroundColor: '#3A5661' }}
               >
                 {running ? 'Pause' : 'Play'}
@@ -795,11 +795,11 @@ export default function AlgorithmSimulation({
                 {data?.histogram && data?.input_image && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <p className="text-xs font-semibold mb-1.5 text-slate-600 dark:text-muted">Input image</p>
+                      <p className="text-[15px] font-semibold mb-1.5 text-slate-600 dark:text-muted">Input image</p>
                       <img src={data.input_image} alt="Input OPG" className="w-full rounded-lg border border-slate-200 dark:border-line" />
                     </div>
                     <div>
-                      <p className="text-xs font-semibold mb-1.5 text-slate-600 dark:text-muted">The histogram of image</p>
+                      <p className="text-[15px] font-semibold mb-1.5 text-slate-600 dark:text-muted">The histogram of image</p>
                       <canvas ref={histCanvas} width={520} height={260} className="w-full rounded-lg border border-slate-200 dark:border-line" />
                       <p className="text-[11px] text-slate-500 dark:text-muted mt-1">
                         <span style={{ color: STANDARD_COLOR }}>- - -</span> SMA thresholds &nbsp;
@@ -810,7 +810,7 @@ export default function AlgorithmSimulation({
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: STANDARD_COLOR }}>Standard SMA</p>
+                    <p className="text-[15px] font-semibold mb-1.5" style={{ color: STANDARD_COLOR }}>Standard SMA</p>
                     <div className="grid grid-cols-2 gap-2">
                       {std.segmented_color && (
                         <img src={std.segmented_color} alt="Standard SMA segmentation (colour)" className="w-full rounded-lg border border-slate-200 dark:border-line" />
@@ -819,7 +819,7 @@ export default function AlgorithmSimulation({
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: ENHANCED_COLOR }}>Enhanced SMA (ESMA)</p>
+                    <p className="text-[15px] font-semibold mb-1.5" style={{ color: ENHANCED_COLOR }}>Enhanced SMA (ESMA)</p>
                     <div className="grid grid-cols-2 gap-2">
                       {esma.segmented_color && (
                         <img src={esma.segmented_color} alt="ESMA segmentation (colour)" className="w-full rounded-lg border border-slate-200 dark:border-line" />
