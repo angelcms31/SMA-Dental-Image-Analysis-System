@@ -1,81 +1,113 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Navbar, { type Navigate } from './Navbar';
+import Footer from './Footer';
 
-const FONT_DISPLAY = "font-['Inter_Tight',sans-serif]";
+const FONT_DISPLAY = "font-['IBM_Plex_Sans',sans-serif]";
 const INK = 'var(--ink)';
 const MUTED = 'var(--muted)';
 
-// Plain-language facts about what the tool does (4 = the conditions the
-// detection model can flag: caries, deep caries, impacted, periapical lesion).
-const STATS: { value: string; label: string }[] = [
-  { value: '4', label: 'Conditions it can flag' },
-  { value: '1', label: 'Click to analyze' },
-  { value: 'PDF', label: 'Report you can save' },
+// Headline KPIs. Images = DENTEX (705 OPGs) + Mendeley OPG (100 OPGs).
+// Accuracy and the enhanced-vs-standard count come from
+// backend/dentex_report.txt (300 DENTEX images x 20 runs): ESMA hits the
+// optimal thresholds 93.1% of the time (Standard SMA 1.5%) and beats
+// Standard SMA on 300/300 images (0 ties, 0 losses).
+const DATASETS = [
+  { name: 'DENTEX', count: 705, color: '#34D399' },
+  { name: 'Mendeley', count: 100, color: '#F0FDF4' },
 ];
 
-const STEPS: { title: string; body: string; icon: React.ReactNode }[] = [
+const KPIS: { value: string; label: string; note: React.ReactNode; visual: React.ReactNode }[] = [
+  {
+    value: '805',
+    label: 'OPG images',
+    note: (
+      <span className="inline-flex flex-wrap gap-x-3">
+        {DATASETS.map((d) => (
+          <span key={d.name} className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+            {d.name} {d.count}
+          </span>
+        ))}
+      </span>
+    ),
+    visual: <Pie slices={DATASETS.map((d) => ({ value: d.count, color: d.color }))} />,
+  },
+  {
+    value: '93.1%',
+    label: 'Threshold accuracy',
+    note: 'vs 1.5% for Standard SMA',
+    visual: <Ring pct={93.1} />,
+  },
+  {
+    value: '300/300',
+    label: 'Images where ESMA beat SMA',
+    note: '0 ties · 0 losses',
+    visual: <DotGrid filled={30} total={30} />,
+  },
+];
+
+type Step = { title: string; body: string; details: string[]; icon: React.ReactNode };
+
+const STEPS: Step[] = [
   {
     title: 'Upload your OPG',
     body: 'Drag your panoramic dental image (OPG) into the analyzer or click "Choose an image". PNG and JPEG work.',
+    details: [
+      "Click \"Get started\" to open the analyzer, then drag your image onto the upload area or click \"Choose an image\".",
+      "Only PNG and JPEG files are accepted.",
+      "Use a full panoramic X-ray (OPG). Cropped or intraoral photos give unreliable results.",
+      "A preview and the image size appear so you can check the file. You can still pick a different image before analyzing.",
+    ],
     icon: <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />,
   },
   {
     title: 'Click Analyze',
     body: 'Press "Analyze OPG" and the system checks your image. It usually takes under a minute.',
+    details: [
+      "Press \"Analyze OPG\". The image is sent to the FastAPI backend, so the backend must be running.",
+      "First, the Enhanced Slime Mould Algorithm (ESMA) finds the best thresholds to separate teeth, bone and soft tissue.",
+      "Then a trained detection model (YOLOv8) marks the areas that may need a closer look.",
+      "It usually takes under a minute; larger images can take a little longer.",
+    ],
     icon: <path d="M7 4.5v15l12-7.5z" />,
   },
   {
     title: 'See what was found',
-    body: 'Your image and the highlighted areas appear side by side, with each finding explained in plain words.',
+    body: 'The highlighted areas appear next to a list of what was found, with each finding explained in plain words.',
+    details: [
+      "The highlighted image appears with \"What was found\" beside it. You can hide that panel to see the image larger.",
+      "Colored boxes mark four kinds of findings: Caries, Deep Caries, Impacted and Periapical Lesion.",
+      "Findings are grouped by type, with their location (from the patient's point of view) and a confidence score.",
+      "Click the small original OPG to explore it with a zoom lens that reveals the findings, or expand the image to full screen.",
+    ],
     icon: <path d="M4 5h7v14H4zM13 5h7v14h-7z" />,
   },
   {
     title: 'Save your report',
     body: 'Download a PDF with your image, the highlighted areas and the list of findings.',
+    details: [
+      "Click \"Download report\" to save everything as a PDF.",
+      "The PDF includes your image, the highlighted areas, the image details and the list of findings with confidence.",
+      "You can also download the highlighted image on its own as a PNG.",
+      "The report is for reference only. It is not a medical diagnosis.",
+    ],
     icon: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6" />,
-  },
-];
-
-const FEATURES: { title: string; body: string }[] = [
-  {
-    title: 'Learns from the best',
-    body: 'The search follows a blend of its best answers so far, not just a single one.',
-  },
-  {
-    title: 'Starts evenly',
-    body: 'It begins by looking across the whole image evenly, so nothing is missed early on.',
-  },
-  {
-    title: 'Adjusts itself',
-    body: 'It tunes how widely it searches while it runs, based on how well it is doing.',
   },
 ];
 
 export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
   const onStart = () => onNavigate('analyzer');
+  const [openStep, setOpenStep] = useState<number | null>(null);
   return (
-    <div className="galaxy-bg min-h-screen font-['Figtree',sans-serif]" style={{ color: INK }}>
+    <div className="galaxy-bg min-h-screen font-['IBM_Plex_Sans',sans-serif]" style={{ color: INK }}>
       <Navbar onNavigate={onNavigate} />
 
       {/* Hero — full width, fills the screen below the navbar */}
       <section className="nebula relative overflow-hidden min-h-[calc(100svh-4rem)] flex flex-col text-[#F0FDF4]">
-        {/* Faint watermark, like a big brand word behind the hero */}
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none select-none absolute bottom-[3.5rem] left-1/2 -translate-x-1/2 text-[34vw] xl:text-[460px]
-                      leading-[0.8] font-light tracking-tighter text-white/[0.06] whitespace-nowrap ${FONT_DISPLAY}`}
-        >
-          ESMA
-        </span>
-
         <div className="relative z-10 flex-1 flex items-center w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
           <div className="w-full grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-10 items-center">
             <div>
-              <span className="inline-flex items-center gap-2 text-[12px] font-medium bg-white/10 border border-white/15 backdrop-blur px-3 py-1.5 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#34D399] shadow-[0_0_8px_#34D399]" />
-                Research prototype
-              </span>
-              <h1 className={`mt-5 text-[34px] sm:text-[60px] lg:text-[68px] xl:text-[84px] font-light leading-[0.98] tracking-[-0.035em] ${FONT_DISPLAY}`}>
+              <h1 className={`text-[34px] sm:text-[60px] lg:text-[68px] xl:text-[84px] font-bold leading-[0.98] tracking-[-0.035em] ${FONT_DISPLAY}`}>
                 Smarter Dental
                 <br />
                 <span className="bg-gradient-to-r from-[#34D399] to-[#BBF7D0] bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(52,211,153,0.35)]">Orthopantomogram</span>
@@ -89,7 +121,7 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <button
                   onClick={onStart}
-                  className="neu-btn min-h-[50px] px-6 rounded-lg bg-btn text-btn-fg text-[14.5px] font-semibold
+                  className="neu-btn min-h-[50px] px-6 rounded-lg bg-btn text-btn-fg text-[16px] font-semibold
                              inline-flex items-center gap-3 hover:bg-[var(--btn-hover)] transition-colors"
                 >
                   Get started
@@ -108,19 +140,21 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
         {/* Stats strip pinned to the bottom of the hero */}
         <div className="relative z-10 border-t border-white/10 bg-black/20 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-3">
-            {STATS.map((s, i) => (
+            {KPIS.map((k, i) => (
               <div
-                key={s.label}
-                className={`flex items-center gap-3 py-5 sm:py-6 px-2 sm:px-6 border-white/10 ${
+                key={k.label}
+                className={`flex items-center gap-4 sm:gap-5 py-5 sm:py-6 px-2 sm:px-6 border-white/10 ${
                   i > 0 ? 'border-t sm:border-t-0 sm:border-l' : ''
                 }`}
               >
-                <span className={`text-[40px] sm:text-[52px] font-light leading-none tracking-tight ${FONT_DISPLAY}`}>
-                  {s.value}
-                </span>
-                <span className="text-[13px] leading-tight max-w-[6rem] text-white/65">
-                  {s.label}
-                </span>
+                <div className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 grid place-items-center">{k.visual}</div>
+                <div className="min-w-0">
+                  <div className={`text-[34px] sm:text-[38px] lg:text-[44px] font-bold leading-none tracking-tight ${FONT_DISPLAY}`}>
+                    {k.value}
+                  </div>
+                  <div className="mt-1.5 text-[13px] font-medium text-white/85">{k.label}</div>
+                  <div className="mt-0.5 text-[12px] text-white/50">{k.note}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -130,47 +164,81 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 sm:pt-20">
         {/* How it works — dark section */}
         <section id="how-it-works" className="scroll-mt-24 rounded-[28px] bg-[var(--how-bg)] border border-white/10 shadow-[var(--card-shadow)] text-white px-5 sm:px-8 py-10 sm:py-12">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8 border-b border-white/10">
-            <h2 className={`text-[30px] sm:text-[38px] font-light leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
-              From OPG to report,
-              <br />
-              in four steps
+          <div className="pb-8 border-b border-white/10">
+            <h2 className={`text-[30px] sm:text-[38px] font-bold leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
+              How ESMA Dental Analyzes Your Dental X-Ray
             </h2>
-            <p className="text-[13.5px] leading-relaxed text-white/65 md:max-w-sm md:justify-self-end self-end">
-              No setup inside the app. Upload one panoramic image, click Analyze, and see the highlighted
-              areas next to your original image.
-            </p>
           </div>
           <ol className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {STEPS.map((step, i) => (
-              <li key={step.title} className="rounded-2xl bg-[var(--how-card)] bg-gradient-to-b from-white/[0.07] to-transparent border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_24px_rgba(0,0,0,0.3)] p-2.5 flex flex-col">
-                <div className="relative aspect-[16/10] rounded-xl bg-gradient-to-br from-[var(--how-art-from)] to-[var(--how-art-to)] shadow-[inset_0_2px_10px_rgba(0,0,0,0.35)] flex items-center justify-center">
-                  <span className={`absolute top-3 left-3.5 text-[13px] text-white/50 ${FONT_DISPLAY}`}>0{i + 1}</span>
-                  <span className="w-14 h-14 rounded-2xl bg-gradient-to-b from-white/20 to-white/5 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_6px_14px_rgba(0,0,0,0.3)] flex items-center justify-center text-[var(--how-icon)]">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
-                      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      {step.icon}
-                    </svg>
+              <li key={step.title}>
+                <button
+                  type="button"
+                  onClick={() => setOpenStep(i)}
+                  aria-haspopup="dialog"
+                  className="group relative w-full aspect-[16/10] sm:aspect-[5/4] lg:aspect-[4/5] overflow-hidden rounded-[24px] lg:rounded-[28px] text-left border border-white/10
+                             shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(0,0,0,0.35)]
+                             transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1
+                             hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_22px_40px_rgba(0,0,0,0.45)]
+                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34D399]"
+                >
+                  <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-[var(--how-art-from)] to-[var(--how-art-to)]" />
+
+                  {/* Frosted fade at the bottom, like a photo card caption */}
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-x-0 bottom-0 h-[38%] backdrop-blur-md bg-gradient-to-t from-black/55 via-black/25 to-transparent"
+                    style={{
+                      maskImage: 'linear-gradient(to top, black 45%, transparent)',
+                      WebkitMaskImage: 'linear-gradient(to top, black 45%, transparent)',
+                    }}
+                  />
+
+                  {/* Art: the glow and icon zoom in on hover; the label and title stay put */}
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-0 sm:bottom-auto sm:h-[70%] flex items-center justify-end pr-6 sm:justify-center sm:pr-0
+                               transition-transform duration-500 ease-out group-hover:scale-[1.18] group-focus-visible:scale-[1.18]"
+                  >
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_50%,rgba(52,211,153,0.32),transparent_45%)] sm:bg-[radial-gradient(circle_at_50%_55%,rgba(52,211,153,0.32),transparent_55%)]" />
+                    <span
+                      className="relative sm:mt-8 w-16 h-16 sm:w-20 sm:h-20 rounded-[18px] sm:rounded-[22px] bg-gradient-to-b from-white/25 to-white/5 border border-white/20
+                                 shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_10px_24px_rgba(0,0,0,0.3)]
+                                 flex items-center justify-center text-[var(--how-icon)]"
+                    >
+                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
+                        strokeLinecap="round" strokeLinejoin="round">
+                        {step.icon}
+                      </svg>
+                    </span>
+                  </div>
+
+                  <span className="absolute top-5 inset-x-0 px-5 text-left sm:px-0 sm:text-center text-[17px] font-bold tracking-wide text-white/85">
+                    Step {String(i + 1).padStart(2, '0')}
                   </span>
-                </div>
-                <div className="px-2 pt-4 pb-3 border-t border-white/10 mt-2.5">
-                  <h3 className="text-[15.5px] font-medium">{step.title}</h3>
-                  <p className="mt-2 text-[12.5px] leading-relaxed text-white/55">{step.body}</p>
-                </div>
+
+                  <h3 className="absolute inset-x-0 bottom-0 px-5 pb-5 text-[18px] font-bold leading-tight text-white">
+                    {step.title}
+                  </h3>
+                </button>
               </li>
             ))}
           </ol>
         </section>
 
+        {openStep !== null && (
+          <StepModal index={openStep} onChange={setOpenStep} onClose={() => setOpenStep(null)} />
+        )}
+
         {/* Algorithms */}
         <section id="algorithms" className="scroll-mt-24 grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center py-14 sm:py-20">
           <div className="px-1 sm:px-4">
-            <h2 className={`text-[30px] sm:text-[38px] font-light leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
+            <h2 className={`text-[30px] sm:text-[38px] font-bold leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
               Inspired by nature.
               <br />
               Built for dental images.
             </h2>
-            <p className="mt-4 text-[14px] leading-relaxed max-w-md" style={{ color: MUTED }}>
+            <p className="mt-4 text-[15px] leading-relaxed max-w-md" style={{ color: MUTED }}>
               The analysis uses a search method inspired by how slime mould finds food. It works out the best
               way to separate teeth, bone and soft tissue in your image, then a trained model marks the areas
               worth a closer look.
@@ -181,66 +249,42 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
             </div>
           </div>
 
-          <div className="rounded-[24px] bg-gradient-to-br from-hero-from to-hero-to border border-[var(--neu-edge)] shadow-[9px_9px_22px_var(--neu-dark),-9px_-9px_22px_var(--neu-light),inset_0_1px_0_rgba(255,255,255,0.45)] p-6 sm:p-8">
-            <div className="flex items-end gap-3">
-              <span className={`text-[64px] sm:text-[76px] font-light leading-none tracking-tight ${FONT_DISPLAY}`}>3</span>
-              <span className="text-[14px] font-medium leading-tight pb-2">
+          <div className="rounded-[24px] bg-gradient-to-br from-hero-from to-hero-to border border-[var(--neu-edge)] shadow-[9px_9px_22px_var(--neu-dark),-9px_-9px_22px_var(--neu-light),inset_0_1px_0_rgba(255,255,255,0.45)] p-8 sm:p-10
+                          min-h-[240px] sm:min-h-[280px] flex items-center justify-center">
+            <div className="flex items-center gap-5 sm:gap-6">
+              <span
+                className={`text-[96px] sm:text-[128px] font-bold leading-none tracking-tighter bg-gradient-to-b from-[var(--hl-from)] to-[var(--hl-to)]
+                            bg-clip-text text-transparent ${FONT_DISPLAY}`}
+              >
+                3
+              </span>
+              <span className="w-px self-stretch my-3 bg-[var(--line-strong)] opacity-60" aria-hidden="true" />
+              <span className={`text-[22px] sm:text-[28px] font-bold leading-[1.15] tracking-tight ${FONT_DISPLAY}`}>
                 smart features
                 <br />
-                behind every analysis
+                <span className="font-normal" style={{ color: MUTED }}>behind every analysis</span>
               </span>
             </div>
-            <ul className="mt-6 flex flex-col gap-2.5">
-              {FEATURES.map((e) => (
-                <li key={e.title} className="neu-sm rounded-xl px-4 py-3">
-                  <p className="text-[14px] font-semibold">{e.title}</p>
-                  <p className="text-[12.5px] leading-relaxed mt-0.5" style={{ color: MUTED }}>{e.body}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        {/* Notes */}
-        <section id="notes" className="scroll-mt-24 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="neu rounded-[24px] p-6">
-            <h3 className={`text-[20px] font-normal tracking-tight ${FONT_DISPLAY}`}>Before you start</h3>
-            <ul className="mt-3 space-y-2 text-[13px] leading-relaxed list-disc pl-4" style={{ color: MUTED }}>
-              <li>Make sure the FastAPI backend is running — the analyzer sends the OPG there for processing.</li>
-              <li>Use a full panoramic (OPG) image; cropped or intraoral photos give unreliable results.</li>
-              <li>The analysis can take a little while on larger images.</li>
-            </ul>
-          </div>
-          <div className="rounded-[24px] bg-warn-bg border border-warn-line shadow-[9px_9px_22px_var(--neu-dark),-9px_-9px_22px_var(--neu-light),inset_0_1px_0_rgba(255,255,255,0.45)] text-warn-ink p-6">
-            <h3 className={`text-[20px] font-normal tracking-tight ${FONT_DISPLAY}`}>⚠ Not a medical diagnosis</h3>
-            <p className="mt-3 text-[13px] leading-relaxed">
-              This is a research prototype for academic demonstration only. Findings come from a trained
-              detection model and threshold-based segmentation, not a validated diagnostic tool. Please consult
-              a licensed dentist for any actual diagnosis or treatment.
-            </p>
           </div>
         </section>
 
         {/* Final CTA */}
         <section className="my-14 sm:my-20 flex flex-col items-center text-center">
-          <h2 className={`text-[30px] sm:text-[44px] font-light leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
+          <h2 className={`text-[30px] sm:text-[44px] font-bold leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
             Ready to try it?
           </h2>
           <button
             onClick={onStart}
-            className="neu-btn mt-6 min-h-[50px] px-6 rounded-lg bg-btn text-btn-fg text-[14.5px] font-semibold
+            className="neu-btn mt-6 min-h-[50px] px-6 rounded-lg bg-btn text-btn-fg text-[16px] font-semibold
                        inline-flex items-center gap-3 hover:bg-[var(--btn-hover)] transition-colors"
           >
             Get started
             <ArrowIcon />
           </button>
         </section>
-
-        <footer className="border-t border-line-strong py-6 text-[12px] flex flex-wrap justify-between gap-2" style={{ color: MUTED }}>
-          <span>ESMA Dental — slime mould–inspired dental image analysis</span>
-          <span>Research prototype · not for clinical use</span>
-        </footer>
       </div>
+
+      <Footer />
     </div>
   );
 }
@@ -251,6 +295,117 @@ function Chip({ color, children }: { color: string; children: React.ReactNode })
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
       {children}
     </span>
+  );
+}
+
+// The gradient tile with the step number and icon; shared by the cards and the modal.
+function StepArt({ step, index, className = '' }: { step: Step; index: number; className?: string }) {
+  return (
+    <div className={`absolute inset-0 bg-gradient-to-br from-[var(--how-art-from)] to-[var(--how-art-to)] flex items-center justify-center ${className}`}>
+      <span className={`absolute top-3 left-3.5 text-[13px] text-white/50 ${FONT_DISPLAY}`}>0{index + 1}</span>
+      <span className="w-14 h-14 rounded-2xl bg-gradient-to-b from-white/20 to-white/5 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_6px_14px_rgba(0,0,0,0.3)] flex items-center justify-center text-[var(--how-icon)]">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {step.icon}
+        </svg>
+      </span>
+    </div>
+  );
+}
+
+function StepModal({ index, onChange, onClose }: { index: number; onChange: (i: number) => void; onClose: () => void }) {
+  const step = STEPS[index];
+  const last = STEPS.length - 1;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight' && index < last) onChange(index + 1);
+      if (e.key === 'ArrowLeft' && index > 0) onChange(index - 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [index, last, onChange, onClose]);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="step-title"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[24px] bg-[var(--how-bg)] border border-white/10 text-white
+                   shadow-[0_24px_60px_rgba(0,0,0,0.45)] p-2.5"
+      >
+        <div className="relative aspect-[16/7] rounded-[18px] overflow-hidden">
+          <StepArt step={step} index={index} />
+          <button
+            type="button"
+            onClick={onClose}
+            autoFocus
+            aria-label="Close"
+            className="absolute top-2.5 right-2.5 w-9 h-9 rounded-full bg-black/30 hover:bg-black/50 text-white/80 hover:text-white flex items-center justify-center"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+              strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-4 sm:px-5 pt-5 pb-4">
+          <p className="text-[12px] font-semibold tracking-wider uppercase text-[#34D399]">
+            Step {index + 1} of {STEPS.length}
+          </p>
+          <h3 id="step-title" className={`mt-1 text-[24px] font-bold tracking-tight ${FONT_DISPLAY}`}>{step.title}</h3>
+          <p className="mt-2 text-[15px] leading-relaxed text-white/90">{step.body}</p>
+          <ul className="mt-4 space-y-3">
+            {step.details.map((d) => (
+              <li key={d} className="flex gap-3 text-[15px] leading-relaxed text-white/75">
+                <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-[#34D399] shrink-0" aria-hidden="true" />
+                {d}
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => onChange(index - 1)}
+              disabled={index === 0}
+              className="min-h-[44px] px-4 rounded-lg text-[16px] font-semibold text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent
+                         inline-flex items-center gap-2"
+            >
+              <span className="rotate-180 flex"><ArrowIcon /></span>
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={index < last ? () => onChange(index + 1) : onClose}
+              className="neu-btn min-h-[44px] px-5 rounded-lg bg-btn text-btn-fg text-[16px] font-semibold hover:bg-[var(--btn-hover)] transition-colors
+                         inline-flex items-center gap-2"
+            >
+              {index < last ? (
+                <>
+                  Next step
+                  <ArrowIcon />
+                </>
+              ) : (
+                'Done'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -412,5 +567,57 @@ function HeroVisual() {
         {agents(true)}
       </svg>
     </div>
+  );
+}
+
+// --- KPI mini visuals (decorative; the numbers beside them carry the meaning) ---
+
+const KPI_GREEN = '#34D399';
+const KPI_TRACK = 'rgba(255,255,255,0.12)';
+
+function Ring({ pct }: { pct: number }) {
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg viewBox="0 0 64 64" className="w-full h-full -rotate-90" aria-hidden="true">
+      <circle cx="32" cy="32" r={r} fill="none" stroke={KPI_TRACK} strokeWidth="7" />
+      <circle
+        cx="32" cy="32" r={r} fill="none" stroke={KPI_GREEN} strokeWidth="7" strokeLinecap="round"
+        strokeDasharray={`${(pct / 100) * c} ${c}`}
+      />
+    </svg>
+  );
+}
+
+function Pie({ slices }: { slices: { value: number; color: string }[] }) {
+  const total = slices.reduce((t, sl) => t + sl.value, 0);
+  const point = (frac: number) => {
+    const a = frac * 2 * Math.PI - Math.PI / 2; // start at 12 o'clock
+    return `${32 + 28 * Math.cos(a)} ${32 + 28 * Math.sin(a)}`;
+  };
+  // where each slice starts, as a fraction of the circle
+  const starts = slices.map((_, i) => slices.slice(0, i).reduce((t, sl) => t + sl.value, 0) / total);
+  return (
+    <svg viewBox="0 0 64 64" className="w-full h-full" aria-hidden="true">
+      {slices.map((sl, i) => {
+        const frac = sl.value / total;
+        const d = `M32 32 L${point(starts[i])} A28 28 0 ${frac > 0.5 ? 1 : 0} 1 ${point(starts[i] + frac)} Z`;
+        return <path key={i} d={d} fill={sl.color} stroke="rgba(0,0,0,0.35)" strokeWidth="1.5" strokeLinejoin="round" />;
+      })}
+    </svg>
+  );
+}
+
+function DotGrid({ filled, total }: { filled: number; total: number }) {
+  const cols = 6;
+  return (
+    <svg viewBox="0 0 64 64" className="w-full h-full" aria-hidden="true">
+      {Array.from({ length: total }, (_, i) => (
+        <rect
+          key={i} x={3 + (i % cols) * 10} y={8 + Math.floor(i / cols) * 10} width="8" height="8" rx="2"
+          fill={i < filled ? KPI_GREEN : KPI_TRACK}
+        />
+      ))}
+    </svg>
   );
 }
