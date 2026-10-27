@@ -1,7 +1,9 @@
-import React, { useState, type ChangeEvent, type DragEvent } from 'react';
+import React, { useEffect, useState, type ChangeEvent, type DragEvent } from 'react';
 import axios from 'axios';
+import { createPortal } from 'react-dom';
 import { API_BASE } from './api';
 import Navbar, { type Navigate } from './Navbar';
+import Footer from './Footer';
 
 interface DetectedRegion {
   quadrant: 'Q1' | 'Q2' | 'Q3' | 'Q4';
@@ -58,8 +60,8 @@ const DIAGNOSIS_INFO: Record<string, string> = {
   'Periapical Lesion': 'Infection or inflammation at the root tip, usually from advanced decay or trauma.',
 };
 
-const FONT_HEAD = "font-['Inter_Tight',sans-serif]";
-const FONT_DISPLAY = "font-['Inter_Tight',sans-serif]";
+const FONT_HEAD = "font-['IBM_Plex_Sans',sans-serif]";
+const FONT_DISPLAY = "font-['IBM_Plex_Sans',sans-serif]";
 const FONT_MONO = "font-['IBM_Plex_Mono',monospace] tabular-nums";
 
 // The analyzer shows a single result from the enhanced pipeline (ESMA
@@ -219,7 +221,7 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
         : 'upload';
 
   return (
-    <div className="galaxy-bg min-h-screen text-ink font-['Figtree',sans-serif] pb-16">
+    <div className="galaxy-bg min-h-screen text-ink font-['IBM_Plex_Sans',sans-serif]">
       <Navbar onNavigate={onNavigate} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-5 flex flex-col gap-5">
@@ -227,7 +229,7 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
           <div>
             <button
               onClick={() => onNavigate('landing')}
-              className="-ml-1 mb-2 min-h-[32px] px-1 inline-flex items-center gap-1.5 text-[13px] font-semibold
+              className="-ml-1 mb-2 min-h-[32px] px-1 inline-flex items-center gap-1.5 text-[16px] font-semibold
                          text-muted hover:text-ink transition-colors"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
@@ -236,10 +238,10 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
               </svg>
               Back to home
             </button>
-            <h1 className={`text-[30px] sm:text-[38px] font-light tracking-tight leading-tight ${FONT_DISPLAY}`}>
+            <h1 className={`text-[30px] sm:text-[38px] font-bold tracking-tight leading-tight ${FONT_DISPLAY}`}>
               {phase === 'results' ? 'Your results' : 'Analyze your OPG'}
             </h1>
-            <p className="text-[14px] text-muted mt-1">
+            <p className="text-[15px] text-muted mt-1">
               {phase === 'upload' && 'Start by adding a panoramic dental image (OPG).'}
               {phase === 'ready' && 'Looks good! Click “Analyze OPG” when you are ready.'}
               {phase === 'analyzing' && 'Hang tight — this usually takes under a minute.'}
@@ -325,7 +327,7 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
                     <div className="absolute inset-0 rounded-xl bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 text-white text-center px-4">
                       <span className="animate-spin rounded-full h-10 w-10 border-[3px] border-white/25 border-t-[#34D399]" />
                       <p className="text-[16px] font-semibold">Analyzing your OPG…</p>
-                      <p className="text-[13px] text-white/80">Looking for areas that may need a closer look.</p>
+                      <p className="text-[15px] text-white/80">Looking for areas that may need a closer look.</p>
                     </div>
                   )}
                 </div>
@@ -333,7 +335,7 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
                   <div className="min-w-0">
                     <p className="text-[15px] font-semibold truncate">{selectedFile?.name}</p>
-                    <p className="text-xs text-muted">{imageDims ? `Image size: ${imageDims} px` : 'Loading…'}</p>
+                    <p className="text-[15px] text-muted">{imageDims ? `Image size: ${imageDims} px` : 'Loading…'}</p>
                   </div>
                   {phase === 'ready' && (
                     <div className="flex items-center gap-4 text-[13px] font-semibold">
@@ -358,7 +360,7 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
                       <SparkleIcon />
                       Analyze OPG
                     </button>
-                    <p className="mt-2 text-center text-[12.5px] text-muted">
+                    <p className="mt-2 text-center text-[15px] text-muted">
                       We'll highlight areas on your image that may need a dentist's attention.
                     </p>
                   </>
@@ -370,8 +372,9 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
           /* ---------------------------- results ---------------------------- */
           <>
             <section className={`${CARD} p-4 sm:p-5 flex flex-col md:flex-row md:items-center gap-4`}>
+              {resultImage && <OriginalThumb original={originalPreview!} findings={resultImage} />}
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] text-muted truncate">{selectedFile?.name}</p>
+                <p className="text-[15px] text-muted truncate">{selectedFile?.name}</p>
                 <p className={`text-[22px] font-semibold tracking-tight ${FONT_HEAD}`}>
                   {regions.length === 0
                     ? 'No areas were flagged'
@@ -399,7 +402,7 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
                 <button
                   onClick={downloadReportPdf}
                   disabled={isExporting}
-                  className="neu-btn min-h-[44px] px-5 rounded-full bg-btn text-btn-fg text-[14px] font-semibold
+                  className="neu-btn min-h-[44px] px-5 rounded-full bg-btn text-btn-fg text-[16px] font-semibold
                              inline-flex items-center gap-2 hover:bg-[var(--btn-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <DownloadIcon />
@@ -407,62 +410,42 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
                 </button>
                 <button
                   onClick={reset}
-                  className="neu-sm min-h-[44px] px-5 rounded-full text-[14px] font-semibold hover:text-link"
+                  className="neu-sm min-h-[44px] px-5 rounded-full text-[16px] font-semibold hover:text-link"
                 >
                   Analyze another OPG
                 </button>
               </div>
             </section>
 
-            {/* your original next to the highlighted result */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Frame title="Your OPG" subtitle="The image you uploaded" onExpand={() => setFullscreenImage(originalPreview)}>
-                <Stage src={originalPreview!} alt="Your OPG" pos={crosshair} onPos={setCrosshair} capHeight />
-              </Frame>
-              <Frame
-                title="Highlighted areas"
-                subtitle="Colored boxes mark what was found"
-                accent="#0F766E"
-                onExpand={resultImage ? () => setFullscreenImage(resultImage) : undefined}
-                onDownload={resultImage ? () => triggerDownload(resultImage, `${fileBase}_findings.png`) : undefined}
+            {/* the highlighted result, with what was found in a side panel that can be minimized */}
+            {resultImage ? (
+              <ResultViewer
+                findings={resultImage}
+                onExpand={setFullscreenImage}
+                onDownload={() => triggerDownload(resultImage, `${fileBase}_findings.png`)}
               >
-                {resultImage ? (
-                  <Stage src={resultImage} alt="Highlighted areas" pos={crosshair} onPos={setCrosshair} capHeight />
-                ) : (
-                  <EmptyStage>No highlighted image was returned.</EmptyStage>
-                )}
-              </Frame>
-            </div>
-
-            <section className={`${CARD} p-5 flex flex-col gap-3`}>
-              <div>
-                <h2 className={`text-[17px] font-semibold ${FONT_HEAD}`}>What was found</h2>
-                <p className="text-[12.5px] text-muted">Grouped by type. Locations are from the patient's point of view.</p>
-              </div>
-              <FindingsList regions={regions} />
-            </section>
-
-            <details className={`${CARD} group`}>
-              <summary className="cursor-pointer list-none px-5 py-4 flex items-center justify-between gap-3">
-                <span>
-                  <span className={`block text-[16px] font-semibold ${FONT_HEAD}`}>Technical details</span>
-                  <span className="block text-[12.5px] text-muted">The exact numbers behind this result, for researchers.</span>
-                </span>
-                <span className="text-muted transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
-              </summary>
-              <div className="px-5 pb-5">
-                <MetricsPanel result={result} />
-              </div>
-            </details>
+                <FindingsList regions={regions} />
+              </ResultViewer>
+            ) : (
+              <>
+                <Frame title="Your OPG" subtitle="No highlighted image was returned" onExpand={() => setFullscreenImage(originalPreview)}>
+                  <Stage src={originalPreview!} alt="Your OPG" pos={crosshair} onPos={setCrosshair} capHeight />
+                </Frame>
+                <section className={`${CARD} p-5 flex flex-col gap-3`}>
+                  <h2 className={`text-[17px] font-bold ${FONT_HEAD}`}>What was found</h2>
+                  <FindingsList regions={regions} />
+                </section>
+              </>
+            )}
           </>
         )}
 
         {/* How to read the results (only useful once there are results) */}
-        <section className={`${CARD} p-5 ${phase === 'results' ? '' : 'max-w-3xl w-full mx-auto'}`}>
-          {phase === 'results' && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-4 text-[12.5px] text-muted mb-5">
+        {phase === 'results' && (
+          <section className={`${CARD} p-5`}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-4 text-[12.5px] text-muted">
               <div>
-                <h3 className="text-[11.5px] font-semibold tracking-wider uppercase mb-2">What the colors mean</h3>
+                <h3 className="text-[11.5px] font-bold tracking-wider uppercase mb-2">What the colors mean</h3>
                 <ul className="space-y-1.5">
                   {Object.keys(DIAGNOSIS_ACCENT).map((d) => (
                     <li key={d} className="flex items-start gap-2">
@@ -478,29 +461,26 @@ export default function OpgAnalyzer({ onNavigate }: { onNavigate: Navigate }) {
                 </ul>
               </div>
               <div>
-                <h3 className="text-[11.5px] font-semibold tracking-wider uppercase mb-2">What is “confidence”?</h3>
+                <h3 className="text-[11.5px] font-bold tracking-wider uppercase mb-2">What is “confidence”?</h3>
                 <p className="leading-relaxed">
                   How sure the computer model is about each highlighted area. It is not a medical certainty —
                   values around 25–45% are normal for this research tool.
                 </p>
               </div>
               <div>
-                <h3 className="text-[11.5px] font-semibold tracking-wider uppercase mb-2">Tips</h3>
+                <h3 className="text-[11.5px] font-bold tracking-wider uppercase mb-2">Tips</h3>
                 <ul className="space-y-1 leading-relaxed list-disc pl-4">
-                  <li>Point at either image to mark the same spot on both.</li>
+                  <li>Click your original OPG at the top to explore it with a zoom lens.</li>
                   <li>Use the expand button to view an image full screen.</li>
                   <li>“Download report” saves everything as a PDF.</li>
                 </ul>
               </div>
             </div>
-          )}
-          <div className="bg-warn-bg border border-warn-line text-warn-ink text-[12.5px] rounded-xl px-4 py-3">
-            <strong>⚠ Not a medical diagnosis.</strong> This is a research tool for academic demonstration
-            only. The highlighted areas may be wrong or incomplete. Please consult a licensed dentist for any
-            actual diagnosis or treatment.
-          </div>
-        </section>
+          </section>
+        )}
       </main>
+
+      <Footer />
 
       {fullscreenImage && (
         <div
@@ -679,11 +659,199 @@ function Frame({
   );
 }
 
-function EmptyStage({ children }: { children: React.ReactNode }) {
+// The highlighted result with "What was found" beside it. The findings panel
+// can be minimized so the image gets the full width.
+function ResultViewer({
+  findings,
+  onExpand,
+  onDownload,
+  children,
+}: {
+  findings: string;
+  onExpand: (src: string) => void;
+  onDownload: () => void;
+  children: React.ReactNode;
+}) {
+  const [showFindings, setShowFindings] = useState(true);
   return (
-    <div className="neu-inset aspect-[2/1] rounded-xl flex items-center justify-center text-sm text-faint">
-      {children}
+    <Frame
+      title="Highlighted areas"
+      subtitle="Colored boxes mark what was found"
+      accent="#0F766E"
+      right={
+        <button
+          onClick={() => setShowFindings((v) => !v)}
+          aria-expanded={showFindings}
+          aria-controls="findings-panel"
+          aria-label={showFindings ? 'Hide what was found' : 'Show what was found'}
+          title={showFindings ? 'Hide what was found' : 'Show what was found'}
+          className={`neu-sm w-9 h-9 rounded-lg inline-flex items-center justify-center transition-colors hover:text-link ${
+            showFindings ? 'text-link' : ''
+          }`}
+        >
+          <PanelIcon open={showFindings} />
+        </button>
+      }
+      onExpand={() => onExpand(findings)}
+      onDownload={onDownload}
+    >
+      <div className="flex flex-col lg:flex-row lg:items-stretch">
+        <div className="w-full lg:flex-1 min-w-0 rounded-xl overflow-hidden bg-[var(--stage)] flex items-center justify-center">
+          <img src={findings} alt="Highlighted areas" className="block max-w-full w-auto h-auto max-h-[62vh]" />
+        </div>
+
+        {/* Slides closed sideways on desktop and folds up on mobile, so the image grows smoothly */}
+        <div
+          id="findings-panel"
+          inert={!showFindings}
+          className={`grid w-full shrink-0 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] lg:grid-rows-[1fr] lg:min-h-[340px] ${
+            showFindings ? 'grid-rows-[1fr] opacity-100 lg:w-[38%]' : 'grid-rows-[0fr] opacity-0 lg:w-0'
+          }`}
+        >
+          <div className="min-h-0 overflow-hidden lg:relative">
+            {/* On desktop the panel is exactly as tall as the image; the list scrolls inside it */}
+            <section className="flex flex-col pt-4 lg:pt-1 lg:pl-4 px-1.5 lg:pr-0 lg:min-w-[320px] lg:absolute lg:inset-0">
+              <div className="pb-3 lg:pr-1.5">
+                <h2 className={`text-[17px] font-bold ${FONT_HEAD}`}>What was found</h2>
+                <p className="text-[13px] text-muted">Grouped by type. Locations are from the patient's point of view.</p>
+              </div>
+              <div className="min-h-0 flex-1 max-h-[50vh] lg:max-h-none overflow-y-auto overscroll-contain pr-1.5 pb-1">
+                {children}
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+function PanelIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M15 4v16" />
+      {open && <path d="M15 4h3.5A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5H15z" fill="currentColor" stroke="none" opacity="0.35" />}
+    </svg>
+  );
+}
+
+// Small original OPG in the results summary. Clicking it opens RevealModal,
+// where a zoom lens over the original shows the findings underneath.
+function OriginalThumb({ original, findings }: { original: string; findings: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-label="Open your original OPG"
+        title="Click to explore your original OPG"
+        className="group relative shrink-0 w-[170px] sm:w-[200px] rounded-xl overflow-hidden bg-[var(--stage)]
+                   border border-line shadow-[0_6px_16px_rgba(0,0,0,0.25)]"
+      >
+        <img src={original} alt="Your original OPG" className="block w-full h-auto transition-transform duration-500 group-hover:scale-105" />
+        <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-colors">
+          <span className="w-9 h-9 rounded-full bg-white/90 text-[#0F766E] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <SearchIcon />
+          </span>
+        </span>
+        <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[11.5px] font-semibold py-1 text-center">
+          Original · click to explore
+        </span>
+      </button>
+      {/* portaled to <body> so the card's own layer can't trap it behind later cards */}
+      {open && createPortal(<RevealModal original={original} findings={findings} onClose={() => setOpen(false)} />, document.body)}
+    </>
+  );
+}
+
+const LENS = 230; // lens diameter, px
+const ZOOM = 1.5; // low, so a whole highlighted box fits in the lens
+
+// The original OPG, large. Hovering shows a round lens that looks at the
+// findings image at the same spot, so the diagnosis is revealed under it.
+function RevealModal({ original, findings, onClose }: { original: string; findings: string; onClose: () => void }) {
+  const [lens, setLens] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reveal-title"
+        onClick={(e) => e.stopPropagation()}
+        className={`${CARD} w-full max-w-4xl max-h-[95vh] overflow-auto p-3 sm:p-4 bg-surface`}
+      >
+        <div className="flex items-start justify-between gap-3 px-1 pb-3">
+          <div>
+            <h2 id="reveal-title" className={`text-[18px] font-bold ${FONT_HEAD}`}>Your original OPG</h2>
+            <p className="text-[13px] text-muted">Hover over the image to reveal what was found underneath.</p>
+          </div>
+          <button
+            onClick={onClose}
+            autoFocus
+            aria-label="Close"
+            className="neu-sm w-9 h-9 rounded-lg inline-flex items-center justify-center text-[20px] leading-none hover:text-link shrink-0"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* the image fills the box width, so there are no empty bars beside it */}
+        <div className="rounded-xl overflow-hidden bg-[var(--stage)]">
+          <div
+            className="relative w-full cursor-zoom-in touch-none"
+            onPointerMove={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setLens({ x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height });
+            }}
+            onPointerLeave={() => setLens(null)}
+          >
+            <img src={original} alt="Your original OPG" className="block w-full h-auto" />
+            {lens && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute rounded-full border-2 border-white/90
+                           shadow-[0_10px_30px_rgba(0,0,0,0.55),inset_0_0_0_1px_rgba(0,0,0,0.25)]"
+                style={{
+                  width: LENS,
+                  height: LENS,
+                  left: lens.x - LENS / 2,
+                  top: lens.y - LENS / 2,
+                  backgroundImage: `url(${findings})`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: `${lens.w * ZOOM}px ${lens.h * ZOOM}px`,
+                  backgroundPosition: `${LENS / 2 - lens.x * ZOOM}px ${LENS / 2 - lens.y * ZOOM}px`,
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+      strokeLinecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l4.5 4.5" />
+    </svg>
   );
 }
 
@@ -739,7 +907,7 @@ function Stage({
 // where, highest confidence), with every single area tucked in a disclosure.
 function FindingsList({ regions }: { regions: DetectedRegion[] }) {
   if (regions.length === 0) {
-    return <p className="text-[13px] text-muted py-1">No areas were flagged on this image.</p>;
+    return <p className="text-[15px] text-muted py-1">No areas were flagged on this image.</p>;
   }
   const groups = groupByLabel(regions);
   const pct = (c?: number) => (c != null ? `${Math.round(c * 100)}%` : null);
@@ -751,23 +919,24 @@ function FindingsList({ regions }: { regions: DetectedRegion[] }) {
         const where = [...new Set(items.map((r) => QUADRANT_LABELS[r.quadrant]))].join(', ');
         const best = Math.max(...items.map((r) => r.confidence ?? 0));
         return (
-          <div key={label} className="neu-inset flex items-center gap-3 px-3 py-2.5 rounded-xl">
-            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: accent }} />
-            <div className="min-w-0">
-              <p className="text-[13.5px] font-semibold">
-                {label}{' '}
-                <span className="font-normal text-muted">
-                  · {plural(items.length, 'area', 'areas')} · {where}
+          <div key={label} className="neu-inset px-3.5 py-3 rounded-xl">
+            {/* name and confidence on one line, details below, so narrow panels don't squeeze the text */}
+            <div className="flex items-center gap-2.5">
+              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+              <span className="min-w-0 text-[15px] font-semibold truncate">{label}</span>
+              {best > 0 && (
+                <span
+                  className={`ml-auto shrink-0 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-[var(--subtle)] ${FONT_MONO}`}
+                  title={items.length > 1 ? 'Highest confidence in this group' : 'Confidence'}
+                >
+                  {pct(best)}
                 </span>
-              </p>
-              <p className="text-xs text-muted">{DIAGNOSIS_INFO[label] ?? ''}</p>
+              )}
             </div>
-            {best > 0 && (
-              <span className="ml-auto text-right shrink-0">
-                <span className={`block text-[13px] font-semibold ${FONT_MONO}`}>{pct(best)}</span>
-                <span className="block text-[10.5px] text-muted">{items.length > 1 ? 'top confidence' : 'confidence'}</span>
-              </span>
-            )}
+            <p className="mt-1 pl-[22px] text-[13px] text-muted">
+              {plural(items.length, 'area', 'areas')} · {where}
+            </p>
+            <p className="mt-0.5 pl-[22px] text-[13.5px] leading-snug text-muted">{DIAGNOSIS_INFO[label] ?? ''}</p>
           </div>
         );
       })}
@@ -792,33 +961,6 @@ function FindingsList({ regions }: { regions: DetectedRegion[] }) {
           </ul>
         </details>
       )}
-    </div>
-  );
-}
-
-// The raw numbers behind the result, shown under "Technical details".
-function MetricsPanel({ result }: { result: AnalyzeResult | null }) {
-  if (result?.status !== 'success') return <p className="text-sm text-muted">No numbers available.</p>;
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5">
-      <MetricRow label="Brightness cut-offs (thresholds)" value={result.thresholds?.join(', ') ?? '-'} />
-      <MetricRow label="Segmentation quality (Kapur's entropy)" value={result.kapur_entropy_fitness?.toFixed(4) ?? '-'} />
-      <MetricRow label="Image fidelity (PSNR, dB)" value={result.psnr != null ? result.psnr.toFixed(4) : '∞'} />
-      <MetricRow label="Structure kept (SSIM)" value={result.ssim?.toFixed(6) ?? '-'} />
-      <MetricRow label="Processing time (s)" value={result.runtime_sec?.toFixed(4) ?? '-'} />
-      <MetricRow
-        label="Steps used (iterations)"
-        value={result.iterations_used != null ? `${result.iterations_used} / 100` : '-'}
-      />
-    </div>
-  );
-}
-
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2 py-2.5 border-b border-line">
-      <span className="text-[12.5px] text-muted">{label}</span>
-      <span className={`text-sm font-medium ${FONT_MONO}`}>{value}</span>
     </div>
   );
 }
