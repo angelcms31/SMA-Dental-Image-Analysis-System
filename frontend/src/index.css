@@ -34,6 +34,8 @@
   --warn-line: #F1DDB8;
   --warn-ink: #6D4A12;
   --danger: #C2412D;
+  --danger-bg: #FDECEA;
+  --danger-line: #F5C2BA;
   --card-shadow: 0 12px 32px rgba(15, 60, 50, 0.08);
   --how-bg: #1F2937;
   --how-card: #283546;
@@ -80,6 +82,8 @@
   --warn-line: #5C4A27;
   --warn-ink: #F2D7A6;
   --danger: #FF9C88;
+  --danger-bg: #3A1F1C;
+  --danger-line: #6B332C;
   --card-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
   --how-bg: #263345;
   --how-card: #2F3E52;

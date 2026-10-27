@@ -1,5 +1,5 @@
-// Builds the downloadable PDF report (original OPG, findings images,
-// metrics and findings tables) entirely in the browser with jsPDF.
+// Builds the downloadable PDF report (original OPG, highlighted image,
+// findings table and technical details) entirely in the browser with jsPDF.
 import { jsPDF } from 'jspdf';
 
 interface ReportRegion {
@@ -24,8 +24,7 @@ interface ReportInput {
   fileName: string;
   imageDims: string | null;
   originalUrl: string;
-  standard: ReportResult | null;
-  enhanced: ReportResult | null;
+  result: ReportResult;
   quadrantLabels: Record<string, string>;
 }
 
@@ -39,7 +38,6 @@ const INK: [number, number, number] = [31, 41, 55];
 const MUTED: [number, number, number] = [78, 97, 91];
 const LINE: [number, number, number] = [211, 236, 221];
 const TEAL: [number, number, number] = [15, 118, 110];
-const ORANGE: [number, number, number] = [200, 113, 31];
 
 // Re-encode as JPEG (and cap the width) so a 3 MB PNG X-ray doesn't
 // turn into a huge PDF.
@@ -67,7 +65,8 @@ function loadAsJpeg(src: string, maxWidth = 1800): Promise<{ data: string; w: nu
 const fmt = (v: number | null | undefined, digits: number) => (v == null ? '-' : v.toFixed(digits));
 
 export async function downloadPdfReport(input: ReportInput, outName: string): Promise<void> {
-  const { fileName, imageDims, originalUrl, standard, enhanced, quadrantLabels } = input;
+  const { fileName, imageDims, originalUrl, result, quadrantLabels } = input;
+  const ok = result.status === 'success' ? result : null;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   let y = MARGIN;
 
@@ -109,14 +108,14 @@ export async function downloadPdfReport(input: ReportInput, outName: string): Pr
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(...MUTED);
-  doc.text('Analysis report - Standard SMA vs Enhanced SMA (ESMA)', MARGIN, y + 11);
+  doc.text('OPG analysis report', MARGIN, y + 11);
   doc.text(new Date().toLocaleString(), PAGE_W - MARGIN, y + 5, { align: 'right' });
   y += 17;
 
   const info: [string, string][] = [
     ['Image', fileName],
     ['Image size', imageDims ? `${imageDims} px` : '-'],
-    ['Parameters', 'd = 4 threshold levels, N = 30 agents, T = 100 iterations'],
+    ['Areas flagged', ok ? String(ok.detected_regions?.length ?? 0) : '-'],
   ];
   doc.setFontSize(9.5);
   info.forEach(([k, v]) => {
@@ -134,38 +133,12 @@ export async function downloadPdfReport(input: ReportInput, outName: string): Pr
   y += 6;
 
   // ---- images ----
-  await addImage(originalUrl, 'Original OPG');
-  if (standard?.status === 'success' && standard.annotated_image) {
-    await addImage(standard.annotated_image, 'Findings - Standard SMA', TEAL);
+  await addImage(originalUrl, 'Your OPG');
+  if (ok?.annotated_image) {
+    await addImage(ok.annotated_image, 'Highlighted areas', TEAL);
   }
-  if (enhanced?.status === 'success' && enhanced.annotated_image) {
-    await addImage(enhanced.annotated_image, 'Findings - Enhanced SMA (ESMA)', ORANGE);
-  }
-
-  // ---- metrics table ----
-  const std = standard?.status === 'success' ? standard : null;
-  const esma = enhanced?.status === 'success' ? enhanced : null;
-  const metricRows: { label: string; a: string; b: string; better?: 'a' | 'b' }[] = [];
-  const pick = (a?: number | null, b?: number | null, lower = false): 'a' | 'b' | undefined => {
-    if (a == null || b == null || a === b) return undefined;
-    return (lower ? b < a : b > a) ? 'b' : 'a';
-  };
-  metricRows.push({ label: 'Thresholds', a: std?.thresholds?.join(', ') ?? '-', b: esma?.thresholds?.join(', ') ?? '-' });
-  metricRows.push({ label: "Kapur's entropy", a: fmt(std?.kapur_entropy_fitness, 4), b: fmt(esma?.kapur_entropy_fitness, 4),
-    better: pick(std?.kapur_entropy_fitness, esma?.kapur_entropy_fitness) });
-  metricRows.push({ label: 'PSNR (dB)', a: fmt(std?.psnr, 4), b: fmt(esma?.psnr, 4), better: pick(std?.psnr, esma?.psnr) });
-  metricRows.push({ label: 'SSIM', a: fmt(std?.ssim, 4), b: fmt(esma?.ssim, 4), better: pick(std?.ssim, esma?.ssim) });
-  metricRows.push({ label: 'Runtime (s)', a: fmt(std?.runtime_sec, 4), b: fmt(esma?.runtime_sec, 4),
-    better: pick(std?.runtime_sec, esma?.runtime_sec, true) });
-  metricRows.push({ label: 'Iterations used', a: std?.iterations_used?.toString() ?? '-', b: esma?.iterations_used?.toString() ?? '-',
-    better: pick(std?.iterations_used, esma?.iterations_used, true) });
-  metricRows.push({ label: 'Findings', a: std ? String(std.detected_regions?.length ?? 0) : '-',
-    b: esma ? String(esma.detected_regions?.length ?? 0) : '-' });
 
   const ROW = 7;
-  ensureSpace(14 + ROW * (metricRows.length + 1));
-  sectionTitle('Segmentation metrics');
-  const mCols = [MARGIN, MARGIN + 60, MARGIN + 120];
   const drawHeader = (cols: number[], labels: string[]) => {
     doc.setFillColor(234, 241, 245);
     doc.rect(MARGIN, y, CONTENT_W, ROW, 'F');
@@ -175,70 +148,65 @@ export async function downloadPdfReport(input: ReportInput, outName: string): Pr
     labels.forEach((l, i) => doc.text(l, cols[i] + 2, y + 4.8));
     y += ROW;
   };
-  drawHeader(mCols, ['Metric', 'Standard SMA', 'ESMA']);
-  metricRows.forEach((r) => {
-    doc.setFontSize(9.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...INK);
-    doc.text(r.label, mCols[0] + 2, y + 4.8);
-    doc.setFont('helvetica', r.better === 'a' ? 'bold' : 'normal');
-    doc.text(r.a, mCols[1] + 2, y + 4.8);
-    doc.setFont('helvetica', r.better === 'b' ? 'bold' : 'normal');
-    if (r.better === 'b') doc.setTextColor(...ORANGE);
-    doc.text(r.b, mCols[2] + 2, y + 4.8);
-    doc.setDrawColor(...LINE);
-    doc.line(MARGIN, y + ROW, PAGE_W - MARGIN, y + ROW);
-    y += ROW;
-  });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...MUTED);
-  doc.text('Bold = better value. Higher is better for entropy, PSNR and SSIM; lower is better for runtime and iterations.',
-    MARGIN, y + 4.5);
-  y += 10;
+  const drawRows = (cols: number[], headers: string[], rows: string[][]) => {
+    rows.forEach((row) => {
+      if (y + ROW > BOTTOM) {
+        doc.addPage();
+        y = MARGIN;
+        drawHeader(cols, headers);
+      }
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...INK);
+      row.forEach((cell, i) => doc.text(cell, cols[i] + 2, y + 4.8));
+      doc.setDrawColor(...LINE);
+      doc.line(MARGIN, y + ROW, PAGE_W - MARGIN, y + ROW);
+      y += ROW;
+    });
+  };
 
   // ---- findings table ----
-  const findingRows: string[][] = [];
-  ([['Standard SMA', std], ['ESMA', esma]] as const).forEach(([name, r]) => {
-    (r?.detected_regions ?? []).forEach((d) => {
-      findingRows.push([
-        name,
-        d.quadrant,
-        quadrantLabels[d.quadrant] ?? '',
-        d.label,
-        d.confidence != null ? `${Math.round(d.confidence * 100)}%` : '-',
-      ]);
-    });
-  });
+  const findingRows = (ok?.detected_regions ?? []).map((d) => [
+    d.label,
+    quadrantLabels[d.quadrant] ?? '',
+    d.quadrant,
+    d.confidence != null ? `${Math.round(d.confidence * 100)}%` : '-',
+  ]);
+  const fCols = [MARGIN, MARGIN + 50, MARGIN + 100, MARGIN + 135];
+  const fHeaders = ['Finding', 'Location (patient side)', 'Quadrant', 'Confidence'];
   ensureSpace(14 + ROW * 2);
-  sectionTitle('Findings');
-  const fCols = [MARGIN, MARGIN + 34, MARGIN + 56, MARGIN + 90, MARGIN + 150];
-  drawHeader(fCols, ['Algorithm', 'Quadrant', 'Side (patient)', 'Diagnosis', 'Confidence']);
+  sectionTitle('What was found');
+  drawHeader(fCols, fHeaders);
   if (findingRows.length === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
     doc.setTextColor(...MUTED);
-    doc.text('No regions were flagged.', MARGIN + 2, y + 4.8);
+    doc.text('No areas were flagged.', MARGIN + 2, y + 4.8);
     y += ROW;
   }
-  findingRows.forEach((row) => {
-    if (y + ROW > BOTTOM) {
-      doc.addPage();
-      y = MARGIN;
-      drawHeader(fCols, ['Algorithm', 'Quadrant', 'Side (patient)', 'Diagnosis', 'Confidence']);
-    }
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(...INK);
-    row.forEach((cell, i) => doc.text(cell, fCols[i] + 2, y + 4.8));
-    doc.setDrawColor(...LINE);
-    doc.line(MARGIN, y + ROW, PAGE_W - MARGIN, y + ROW);
-    y += ROW;
-  });
+  drawRows(fCols, fHeaders, findingRows);
   doc.setFontSize(8);
   doc.setTextColor(...MUTED);
-  doc.text('Confidence is the detector\'s certainty for that box, not clinical certainty.', MARGIN, y + 4.5);
+  doc.text("Confidence is how sure the computer model is about each area, not a medical certainty.", MARGIN, y + 4.5);
   y += 10;
+
+  // ---- technical details ----
+  const techRows: string[][] = [
+    ['Brightness cut-offs (thresholds)', ok?.thresholds?.join(', ') ?? '-'],
+    ["Segmentation quality (Kapur's entropy)", fmt(ok?.kapur_entropy_fitness, 4)],
+    ['Image fidelity (PSNR, dB)', fmt(ok?.psnr, 4)],
+    ['Structure kept (SSIM)', fmt(ok?.ssim, 4)],
+    ['Processing time (s)', fmt(ok?.runtime_sec, 4)],
+    ['Steps used (iterations)', ok?.iterations_used != null ? `${ok.iterations_used} / 100` : '-'],
+    ['Settings', 'd = 4 threshold levels, N = 30 agents, T = 100 iterations'],
+  ];
+  const tCols = [MARGIN, MARGIN + 80];
+  const tHeaders = ['Technical details', 'Value'];
+  ensureSpace(14 + ROW * (techRows.length + 1));
+  sectionTitle('Technical details (for researchers)');
+  drawHeader(tCols, tHeaders);
+  drawRows(tCols, tHeaders, techRows);
+  y += 6;
 
   // ---- disclaimer ----
   const disclaimer =

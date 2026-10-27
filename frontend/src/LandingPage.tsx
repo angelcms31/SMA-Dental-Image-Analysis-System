@@ -5,49 +5,49 @@ const FONT_DISPLAY = "font-['Inter_Tight',sans-serif]";
 const INK = 'var(--ink)';
 const MUTED = 'var(--muted)';
 
-// Real run settings the analyzer sends to the backend (see OpgAnalyzer runAlgorithm).
+// Plain-language facts about what the tool does (4 = the conditions the
+// detection model can flag: caries, deep caries, impacted, periapical lesion).
 const STATS: { value: string; label: string }[] = [
-  { value: '2', label: 'Algorithms compared' },
-  { value: '4', label: 'Thresholds per image' },
-  { value: '30', label: 'Search agents' },
-  { value: '100', label: 'Max iterations' },
+  { value: '4', label: 'Conditions it can flag' },
+  { value: '1', label: 'Click to analyze' },
+  { value: 'PDF', label: 'Report you can save' },
 ];
 
 const STEPS: { title: string; body: string; icon: React.ReactNode }[] = [
   {
     title: 'Upload your OPG',
-    body: 'Drag an orthopantomogram (OPG) into the analyzer or click "Choose OPG". PNG and JPEG are supported.',
+    body: 'Drag your panoramic dental image (OPG) into the analyzer or click "Choose an image". PNG and JPEG work.',
     icon: <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />,
   },
   {
-    title: 'Run the algorithms',
-    body: 'Press Standard or ESMA to run one algorithm, or "Run both" to process them at the same time.',
+    title: 'Click Analyze',
+    body: 'Press "Analyze OPG" and the system checks your image. It usually takes under a minute.',
     icon: <path d="M7 4.5v15l12-7.5z" />,
   },
   {
-    title: 'Compare side by side',
-    body: 'The Standard SMA and ESMA results appear next to each other. Hover any image and the crosshair marks the same spot on all of them.',
+    title: 'See what was found',
+    body: 'Your image and the highlighted areas appear side by side, with each finding explained in plain words.',
     icon: <path d="M4 5h7v14H4zM13 5h7v14h-7z" />,
   },
   {
-    title: 'Review the report',
-    body: 'Switch between Findings and Metrics, check which algorithm scored better, and download the PDF report.',
+    title: 'Save your report',
+    body: 'Download a PDF with your image, the highlighted areas and the list of findings.',
     icon: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6" />,
   },
 ];
 
-const ENHANCEMENTS: { title: string; body: string }[] = [
+const FEATURES: { title: string; body: string }[] = [
   {
-    title: 'Multi-leader guidance',
-    body: 'Agents follow a fitness-weighted blend of the top leaders instead of a single best solution.',
+    title: 'Learns from the best',
+    body: 'The search follows a blend of its best answers so far, not just a single one.',
   },
   {
-    title: 'Quasi-uniform initialization',
-    body: 'The starting population is spread evenly across the search space instead of placed at random.',
+    title: 'Starts evenly',
+    body: 'It begins by looking across the whole image evenly, so nothing is missed early on.',
   },
   {
-    title: 'Adaptive feedback control',
-    body: 'Exploration settings adjust during the run based on convergence rate and population diversity.',
+    title: 'Adjusts itself',
+    body: 'It tunes how widely it searches while it runs, based on how well it is doing.',
   },
 ];
 
@@ -83,8 +83,8 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
                 Segmentation
               </h1>
               <p className="mt-6 text-[16px] leading-relaxed max-w-lg text-white/75">
-                Compare the Standard Slime Mould Algorithm against the Enhanced SMA (ESMA) on orthopantomograms (OPG),
-                with segmentation, flagged findings and metrics side by side.
+                Upload a panoramic dental image (OPG) and see the areas that may need a closer look highlighted
+                for you, with a simple report you can save.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <button
@@ -107,13 +107,13 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
 
         {/* Stats strip pinned to the bottom of the hero */}
         <div className="relative z-10 border-t border-white/10 bg-black/20 backdrop-blur-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 lg:grid-cols-4">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-3">
             {STATS.map((s, i) => (
               <div
                 key={s.label}
-                className={`flex items-center gap-3 py-5 sm:py-6 px-2 sm:px-6 border-white/10 ${i % 2 === 1 ? 'border-l' : ''} ${
-                  i === 2 ? 'lg:border-l' : ''
-                } ${i < 2 ? 'border-b lg:border-b-0' : ''}`}
+                className={`flex items-center gap-3 py-5 sm:py-6 px-2 sm:px-6 border-white/10 ${
+                  i > 0 ? 'border-t sm:border-t-0 sm:border-l' : ''
+                }`}
               >
                 <span className={`text-[40px] sm:text-[52px] font-light leading-none tracking-tight ${FONT_DISPLAY}`}>
                   {s.value}
@@ -137,8 +137,8 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
               in four steps
             </h2>
             <p className="text-[13.5px] leading-relaxed text-white/65 md:max-w-sm md:justify-self-end self-end">
-              No setup inside the app. Upload one panoramic image, run the algorithms and the results land
-              in two screens you can compare at a glance.
+              No setup inside the app. Upload one panoramic image, click Analyze, and see the highlighted
+              areas next to your original image.
             </p>
           </div>
           <ol className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -166,17 +166,18 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
         <section id="algorithms" className="scroll-mt-24 grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center py-14 sm:py-20">
           <div className="px-1 sm:px-4">
             <h2 className={`text-[30px] sm:text-[38px] font-light leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
-              Two algorithms. One OPG.
+              Inspired by nature.
               <br />
-              Side by side.
+              Built for dental images.
             </h2>
             <p className="mt-4 text-[14px] leading-relaxed max-w-md" style={{ color: MUTED }}>
-              Both search for the multilevel thresholds that maximize Kapur's entropy. The Standard SMA follows
-              the original slime mould algorithm; ESMA adds three enhancements to search more effectively.
+              The analysis uses a search method inspired by how slime mould finds food. It works out the best
+              way to separate teeth, bone and soft tissue in your image, then a trained model marks the areas
+              worth a closer look.
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
-              <Chip color="#0F766E">Standard SMA</Chip>
-              <Chip color="#E39446">Enhanced SMA (ESMA)</Chip>
+              <Chip color="#0F766E">Slime mould–inspired search</Chip>
+              <Chip color="#E39446">Trained detection model</Chip>
             </div>
           </div>
 
@@ -184,13 +185,13 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
             <div className="flex items-end gap-3">
               <span className={`text-[64px] sm:text-[76px] font-light leading-none tracking-tight ${FONT_DISPLAY}`}>3</span>
               <span className="text-[14px] font-medium leading-tight pb-2">
-                enhancements in ESMA
+                smart features
                 <br />
-                over the Standard SMA
+                behind every analysis
               </span>
             </div>
             <ul className="mt-6 flex flex-col gap-2.5">
-              {ENHANCEMENTS.map((e) => (
+              {FEATURES.map((e) => (
                 <li key={e.title} className="neu-sm rounded-xl px-4 py-3">
                   <p className="text-[14px] font-semibold">{e.title}</p>
                   <p className="text-[12.5px] leading-relaxed mt-0.5" style={{ color: MUTED }}>{e.body}</p>
@@ -207,7 +208,7 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
             <ul className="mt-3 space-y-2 text-[13px] leading-relaxed list-disc pl-4" style={{ color: MUTED }}>
               <li>Make sure the FastAPI backend is running — the analyzer sends the OPG there for processing.</li>
               <li>Use a full panoramic (OPG) image; cropped or intraoral photos give unreliable results.</li>
-              <li>Running both algorithms can take a little while on larger images.</li>
+              <li>The analysis can take a little while on larger images.</li>
             </ul>
           </div>
           <div className="rounded-[24px] bg-warn-bg border border-warn-line shadow-[9px_9px_22px_var(--neu-dark),-9px_-9px_22px_var(--neu-light),inset_0_1px_0_rgba(255,255,255,0.45)] text-warn-ink p-6">
@@ -223,7 +224,7 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
         {/* Final CTA */}
         <section className="my-14 sm:my-20 flex flex-col items-center text-center">
           <h2 className={`text-[30px] sm:text-[44px] font-light leading-[1.1] tracking-tight ${FONT_DISPLAY}`}>
-            Ready to compare?
+            Ready to try it?
           </h2>
           <button
             onClick={onStart}
@@ -236,7 +237,7 @@ export default function LandingPage({ onNavigate }: { onNavigate: Navigate }) {
         </section>
 
         <footer className="border-t border-line-strong py-6 text-[12px] flex flex-wrap justify-between gap-2" style={{ color: MUTED }}>
-          <span>ESMA Dental — Standard vs Enhanced Slime Mould Algorithm</span>
+          <span>ESMA Dental — slime mould–inspired dental image analysis</span>
           <span>Research prototype · not for clinical use</span>
         </footer>
       </div>
